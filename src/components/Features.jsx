@@ -1,0 +1,1 @@
+import React from " react\;\nimport \./Features.css\;\nexport default function Features() { return <section className=\features-section\><h2>Features</h2></section>; }

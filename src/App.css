@@ -1,0 +1,10 @@
+.main-content {
+  flex-grow: 1;
+  padding-top: 84px; /* Offset for fixed navbar */
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    padding-top: 70px;
+  }
+}

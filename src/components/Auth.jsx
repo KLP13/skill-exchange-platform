@@ -1,0 +1,1 @@
+import React from \react\;\nimport \./Auth.css\;\nexport default function Auth() { return <div>Auth</div>; }

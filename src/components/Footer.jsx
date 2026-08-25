@@ -1,0 +1,1 @@
+import React from \react\;\nimport \./Footer.css\;\nexport default function Footer() { return <footer>Footer</footer>; }
