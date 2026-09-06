@@ -9,6 +9,9 @@ export interface StepOnePayload {
   phone?: string;
   avatar?: string;
   bio?: string;
+  github?: string;
+  linkedin?: string;
+  portfolio?: string;
 }
 
 export interface StepTwoPayload {
@@ -123,16 +126,28 @@ export async function saveStepOnePersonal(
 
   if (payload.department?.trim()) {
     const deptName = payload.department.trim();
-    const deptCode = deptName.substring(0, 5).toUpperCase();
-
-    const deptRes = await pool.query<{ id: string }>(
-      `INSERT INTO departments (code, name)
-       VALUES ($1, $2)
-       ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
-       RETURNING id`,
-      [deptCode, deptName]
+    
+    // Check if department already exists by name
+    const existingDept = await pool.query<{ id: string }>(
+      "SELECT id FROM departments WHERE LOWER(name) = LOWER($1)",
+      [deptName]
     );
-    departmentId = deptRes.rows[0]?.id || null;
+
+    if (existingDept.rows.length > 0) {
+      departmentId = existingDept.rows[0].id;
+    } else {
+      const randomSuffix = Math.floor(100 + Math.random() * 900);
+      const deptCode = deptName.replace(/[^A-Za-z0-9]/g, "").substring(0, 10).toUpperCase() + "_" + randomSuffix;
+      
+      const deptRes = await pool.query<{ id: string }>(
+        `INSERT INTO departments (code, name)
+         VALUES ($1, $2)
+         ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+         RETURNING id`,
+        [deptCode, deptName]
+      );
+      departmentId = deptRes.rows[0]?.id || null;
+    }
   }
 
   await pool.query(
@@ -145,9 +160,12 @@ export async function saveStepOnePersonal(
          phone_number = $6,
          bio = $7,
          avatar = COALESCE($8, avatar),
+         github_url = COALESCE($9, github_url),
+         linkedin_url = COALESCE($10, linkedin_url),
+         portfolio_url = COALESCE($11, portfolio_url),
          onboarding_step = GREATEST(onboarding_step, 2),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $9`,
+     WHERE id = $12`,
     [
       payload.fullName?.trim() || null,
       payload.registrationNumber?.trim() || null,
@@ -157,6 +175,9 @@ export async function saveStepOnePersonal(
       payload.phone?.trim() || null,
       payload.bio?.trim() || null,
       payload.avatar?.trim() || null,
+      payload.github?.trim() || null,
+      payload.linkedin?.trim() || null,
+      payload.portfolio?.trim() || null,
       userId,
     ]
   );
@@ -246,9 +267,9 @@ export async function saveStepThreePreferences(
     `UPDATE users
      SET availability_preference = $1,
          preferred_time = $2,
-         github_url = $3,
-         linkedin_url = $4,
-         portfolio_url = $5,
+         github_url = COALESCE($3, github_url),
+         linkedin_url = COALESCE($4, linkedin_url),
+         portfolio_url = COALESCE($5, portfolio_url),
          onboarding_completed = TRUE,
          onboarding_step = 3,
          updated_at = CURRENT_TIMESTAMP

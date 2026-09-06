@@ -7,12 +7,13 @@ import StepOne from "@/components/onboarding/StepOne";
 import StepTwo from "@/components/onboarding/StepTwo";
 import StepThree from "@/components/onboarding/StepThree";
 import { useAuth } from "@/context/AuthContext";
+import { useSessions } from "@/hooks/useSessions";
+import type { DayAvailability } from "@/data/mentors";
 import {
   onboardingApi,
   type OnboardingStatusData,
   type StepOnePayload,
   type StepTwoPayload,
-  type StepThreePayload,
 } from "@/services/onboardingApi";
 
 export default function ProfileSetup() {
@@ -21,6 +22,7 @@ export default function ProfileSetup() {
   const [isLoading, setIsLoading] = useState(true);
 
   const { user, updateUser } = useAuth();
+  const { currentUser, updateUserProfile, updateUserAvailability } = useSessions();
   const navigate = useNavigate();
 
   // Load saved onboarding status to allow resuming seamlessly
@@ -30,15 +32,25 @@ export default function ProfileSetup() {
       .then((res) => {
         if (res.success && res.data) {
           setSavedData(res.data);
-          // Resume from current saved step (1, 2, or 3)
           const step = Math.min(Math.max(res.data.onboardingStep || 1, 1), 3);
           setCurrentStep(step);
 
-          // Update full name / avatar in auth state if available
+          const activeUserId = user?.id || currentUser.id;
+
           if (res.data.fullName) {
             updateUser({
               fullName: res.data.fullName,
               avatar: res.data.avatar || undefined,
+              department: res.data.department || undefined,
+            });
+            updateUserProfile(activeUserId, {
+              name: res.data.fullName,
+              department: res.data.department || currentUser.department,
+              year: res.data.year || currentUser.year,
+              bio: res.data.bio || currentUser.bio,
+              avatar: res.data.avatar || currentUser.avatar,
+              teaches: res.data.teaches?.length ? res.data.teaches : currentUser.teaches,
+              learns: res.data.learns?.length ? res.data.learns : currentUser.learns,
             });
           }
         }
@@ -51,15 +63,30 @@ export default function ProfileSetup() {
       });
   }, []);
 
-  const handleStepOneNext = async (data: StepOnePayload) => {
+  const handleStepOneNext = async (
+    data: StepOnePayload & { github?: string; linkedin?: string; portfolio?: string }
+  ) => {
     const res = await onboardingApi.savePersonal(data);
     if (res.success && res.data) {
       setSavedData(res.data);
+      const activeUserId = user?.id || currentUser.id;
+
       updateUser({
         fullName: res.data.fullName,
         avatar: res.data.avatar || undefined,
+        department: res.data.department || undefined,
         onboardingStep: res.data.onboardingStep,
       });
+
+      // Synchronize directly with Dashboard Profile Settings
+      updateUserProfile(activeUserId, {
+        name: res.data.fullName,
+        department: res.data.department || "Computer Science",
+        year: res.data.year || "3rd Year",
+        bio: res.data.bio || "",
+        avatar: res.data.avatar || "",
+      });
+
       setCurrentStep(2);
     }
   };
@@ -68,22 +95,43 @@ export default function ProfileSetup() {
     const res = await onboardingApi.saveSkills(data);
     if (res.success && res.data) {
       setSavedData(res.data);
+      const activeUserId = user?.id || currentUser.id;
+
       updateUser({
         onboardingStep: res.data.onboardingStep,
       });
+
+      // Synchronize directly with Dashboard Skills & Interests Settings
+      updateUserProfile(activeUserId, {
+        teaches: res.data.teaches || [],
+        teachingSkill: res.data.teaches?.[0] || "Web Development",
+        learns: res.data.learns || [],
+      });
+
       setCurrentStep(3);
     }
   };
 
-  const handleStepThreeFinish = async (data: StepThreePayload) => {
-    const res = await onboardingApi.savePreferences(data);
+  const handleStepThreeFinish = async (schedule: DayAvailability[]) => {
+    const activeUserId = user?.id || currentUser.id;
+
+    // 1. Sync directly with Dashboard Availability Settings
+    updateUserAvailability(activeUserId, schedule);
+
+    // 2. Summarize availability for preferences API
+    const activeDays = schedule.filter((s) => s.enabled).map((s) => s.day).join(", ");
+    const res = await onboardingApi.savePreferences({
+      availability: activeDays || "Flexible",
+      preferredTime: "Evening",
+    });
+
     if (res.success && res.data) {
       setSavedData(res.data);
       updateUser({
         onboardingCompleted: true,
         onboardingStep: 3,
       });
-      // Redirect to the authenticated user's dashboard
+      // Redirect straight to Dashboard
       navigate("/dashboard");
     }
   };
@@ -91,9 +139,9 @@ export default function ProfileSetup() {
   const renderStep = () => {
     if (isLoading) {
       return (
-        <div className="rounded-3xl border border-violet-100 bg-white p-12 text-center text-gray-500 shadow-sm">
+        <div className="rounded-3xl border border-violet-100 bg-white p-12 text-center text-gray-500 shadow-sm max-w-xl mx-auto">
           <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-violet-600 border-t-transparent" />
-          <p>Loading your profile...</p>
+          <p className="font-medium text-sm">Loading your profile setup...</p>
         </div>
       );
     }
@@ -103,14 +151,17 @@ export default function ProfileSetup() {
         return (
           <StepOne
             initialData={{
-              fullName: savedData?.fullName || user?.fullName || "",
+              fullName: savedData?.fullName || user?.fullName || currentUser.name || "",
               registrationNumber: savedData?.registrationNumber || "",
               university: savedData?.university || "VIT Chennai",
-              department: savedData?.department || "",
-              year: savedData?.year || "",
+              department: savedData?.department || currentUser.department || "",
+              year: savedData?.year || currentUser.year || "",
               phone: savedData?.phone || "",
-              bio: savedData?.bio || "",
-              avatar: savedData?.avatar || user?.avatar || "",
+              bio: savedData?.bio || currentUser.bio || "",
+              avatar: savedData?.avatar || user?.avatar || currentUser.avatar || "",
+              github: savedData?.github || "",
+              linkedin: savedData?.linkedin || "",
+              portfolio: savedData?.portfolio || "",
             }}
             onNext={handleStepOneNext}
           />
@@ -120,8 +171,8 @@ export default function ProfileSetup() {
         return (
           <StepTwo
             initialData={{
-              teaches: savedData?.teaches || [],
-              learns: savedData?.learns || [],
+              teaches: savedData?.teaches?.length ? savedData.teaches : currentUser.teaches,
+              learns: savedData?.learns?.length ? savedData.learns : currentUser.learns,
             }}
             onBack={() => setCurrentStep(1)}
             onNext={handleStepTwoNext}
@@ -131,13 +182,7 @@ export default function ProfileSetup() {
       case 3:
         return (
           <StepThree
-            initialData={{
-              availability: savedData?.availability || "",
-              preferredTime: savedData?.preferredTime || "",
-              github: savedData?.github || "",
-              linkedin: savedData?.linkedin || "",
-              portfolio: savedData?.portfolio || "",
-            }}
+            initialSchedule={currentUser.availability}
             onBack={() => setCurrentStep(2)}
             onFinish={handleStepThreeFinish}
           />
@@ -151,8 +196,7 @@ export default function ProfileSetup() {
   return (
     <OnboardingLayout>
       <ProgressStepper currentStep={currentStep} />
-
-      <div className="mt-12">{renderStep()}</div>
+      <div className="mt-8">{renderStep()}</div>
     </OnboardingLayout>
   );
 }
