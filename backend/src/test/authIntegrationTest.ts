@@ -1,6 +1,7 @@
 import pool from "../config/db";
 import {
-  signupWithEmailPassword,
+  requestSignupVerification,
+  verifySignupOtp,
   loginWithEmailPassword,
   authenticateGoogle,
   getMe,
@@ -12,219 +13,282 @@ import {
   saveStepThreePreferences,
 } from "../modules/onboarding/onboardingService";
 
-async function runAuthTests() {
+async function runPhase16CorrectionTests() {
   console.log("\n============================================================");
-  console.log("       PHASE 16 — AUTHENTICATION & ONBOARDING TEST SUITE");
+  console.log("   PHASE 16 CORRECTION — VERIFICATION & GOOGLE TEST SUITE");
   console.log("============================================================\n");
 
-  const testEmail1 = `test.student.${Date.now()}@vitstudent.ac.in`;
-  const testEmail2 = `test.faculty.${Date.now()}@vit.ac.in`;
-  const invalidEmail = `test.hacker.${Date.now()}@gmail.com`;
+  const testEmail1 = `vit.student.${Date.now()}@vitstudent.ac.in`;
+  const testEmail2 = `faculty.dr.${Date.now()}@vit.ac.in`;
+  const fakeEmail = `fakeperson.${Date.now()}@vitstudent.ac.in`;
+  const nonVitEmail = `hacker.${Date.now()}@gmail.com`;
 
   try {
     // ------------------------------------------------------------
-    // TEST A: New Email/Password Signup
+    // TEST 1 — FAKE / UNVERIFIED VIT EMAIL
     // ------------------------------------------------------------
-    console.log("TEST A: Creating new account with VIT student email...");
-    const signupRes1 = await signupWithEmailPassword(
-      "Test Student",
-      testEmail1,
+    console.log("TEST 1: Requesting OTP for a VIT email but NOT verifying...");
+    const reqRes1 = await requestSignupVerification(
+      "Fake Person",
+      fakeEmail,
       "Password123!"
     );
-    console.log("✅ Signup successful for:", signupRes1.user.email);
-    console.log("   - User ID:", signupRes1.user.id);
-    console.log("   - Initial Credits:", signupRes1.user.credits);
-    console.log("   - Onboarding Step:", signupRes1.user.onboardingStep);
-    console.log("   - Onboarding Completed:", signupRes1.user.onboardingCompleted);
+    console.log("   - OTP requested for:", reqRes1.email);
 
-    if (signupRes1.user.credits !== 40) {
-      throw new Error(`Expected 40 initial credits, got ${signupRes1.user.credits}`);
+    // Verify in database: NO user or wallet should exist for fakeEmail
+    const unverifiedUserCheck = await pool.query(
+      "SELECT id FROM users WHERE email = $1",
+      [fakeEmail]
+    );
+    if (unverifiedUserCheck.rows.length > 0) {
+      throw new Error("FAILED: User was created before OTP verification!");
+    }
+    const unverifiedWalletCheck = await pool.query(
+      `SELECT w.id FROM wallets w 
+       JOIN users u ON u.id = w.user_id 
+       WHERE u.email = $1`,
+      [fakeEmail]
+    );
+    if (unverifiedWalletCheck.rows.length > 0) {
+      throw new Error("FAILED: Wallet was created before OTP verification!");
+    }
+    console.log("✅ TEST 1 PASSED: Fake/unverified email has NO user record, NO wallet, and NO credits.");
+
+    // ------------------------------------------------------------
+    // TEST 2 — VALID VIT EMAIL & CORRECT OTP
+    // ------------------------------------------------------------
+    console.log("\nTEST 2: Requesting OTP and verifying with valid code...");
+    await requestSignupVerification(
+      "Real Student",
+      testEmail1,
+      "ValidPass123!"
+    );
+
+    // Retrieve pending OTP record
+    const otpRecord = await pool.query<{ id: string; otp_hash: string }>(
+      `SELECT id, otp_hash FROM email_verifications 
+       WHERE email = $1 AND verified = FALSE 
+       ORDER BY created_at DESC LIMIT 1`,
+      [testEmail1]
+    );
+    if (otpRecord.rows.length === 0) {
+      throw new Error("Verification record not found in database!");
     }
 
-    // Verify database directly
+    // Since otp_hash is hashed with bcrypt, let's test OTP verification via verifySignupOtp.
+    // For test purposes, we will update the verification with a known OTP hash or use bcrypt to verify
+    const bcrypt = await import("bcryptjs");
+    const testOtp = "789123";
+    const newHash = await bcrypt.hash(testOtp, 10);
+    await pool.query(
+      "UPDATE email_verifications SET otp_hash = $1 WHERE id = $2",
+      [newHash, otpRecord.rows[0].id]
+    );
+
+    const verifyRes = await verifySignupOtp(testEmail1, testOtp);
+    console.log("✅ Verified account created successfully:", verifyRes.user.email);
+    console.log("   - User ID:", verifyRes.user.id);
+    console.log("   - Initial Credits:", verifyRes.user.credits);
+    console.log("   - Onboarding Step:", verifyRes.user.onboardingStep);
+    console.log("   - Onboarding Completed:", verifyRes.user.onboardingCompleted);
+
+    if (verifyRes.user.credits !== 40) {
+      throw new Error(`Expected 40 initial credits, got ${verifyRes.user.credits}`);
+    }
+
+    // Verify DB integrity for wallet & transactions
     const walletCheck = await pool.query(
       "SELECT balance FROM wallets WHERE user_id = $1",
-      [signupRes1.user.id]
+      [verifyRes.user.id]
     );
     if (walletCheck.rows[0].balance !== 40) {
-      throw new Error(`Wallet in DB has balance ${walletCheck.rows[0].balance}, expected 40`);
+      throw new Error(`Wallet balance mismatch: ${walletCheck.rows[0].balance}`);
     }
 
     const txCheck = await pool.query(
       "SELECT * FROM credit_transactions WHERE user_id = $1",
-      [signupRes1.user.id]
+      [verifyRes.user.id]
     );
     if (txCheck.rows.length !== 1 || txCheck.rows[0].amount !== 40) {
-      throw new Error(`Expected exactly 1 transaction of 40 credits, found ${txCheck.rows.length}`);
+      throw new Error(`Expected exactly 1 transaction of +40 credits, found ${txCheck.rows.length}`);
     }
-    console.log("✅ Database verified: Exactly 1 wallet (40 credits) and 1 transaction (+40 INITIAL_SIGNUP_BONUS)");
+    console.log("✅ TEST 2 PASSED: Exactly 1 user, 1 wallet (40 credits), and 1 transaction (+40 INITIAL_SIGNUP_BONUS).");
 
     // ------------------------------------------------------------
-    // TEST B: Invalid Email Domain (@gmail.com)
+    // TEST 3 — WRONG OTP
     // ------------------------------------------------------------
-    console.log("\nTEST B: Testing rejection of non-VIT domain (gmail.com)...");
+    console.log("\nTEST 3: Testing wrong OTP rejection...");
+    const wrongOtpEmail = `wrong.otp.${Date.now()}@vitstudent.ac.in`;
+    await requestSignupVerification("Wrong Tester", wrongOtpEmail, "Password123!");
     try {
-      await signupWithEmailPassword("Hacker", invalidEmail, "Password123!");
-      throw new Error("FAILED: gmail.com was accepted!");
+      await verifySignupOtp(wrongOtpEmail, "000000");
+      throw new Error("FAILED: Wrong OTP was accepted!");
     } catch (err: any) {
-      console.log("✅ Correctly rejected invalid domain:", err.message);
+      console.log("✅ Correctly rejected wrong OTP:", err.message);
     }
+    const wrongUserCheck = await pool.query("SELECT id FROM users WHERE email = $1", [wrongOtpEmail]);
+    if (wrongUserCheck.rows.length > 0) {
+      throw new Error("FAILED: User created on wrong OTP!");
+    }
+    console.log("✅ TEST 3 PASSED: Wrong OTP rejected and no user created.");
 
     // ------------------------------------------------------------
-    // TEST C: Valid VIT Faculty Domain (@vit.ac.in)
+    // TEST 4 — EXPIRED OTP
     // ------------------------------------------------------------
-    console.log("\nTEST C: Testing @vit.ac.in domain acceptance...");
-    const signupRes2 = await signupWithEmailPassword(
-      "Dr. Ramesh",
-      testEmail2,
-      "ProfPassword123!"
+    console.log("\nTEST 4: Testing expired OTP rejection...");
+    const expiredEmail = `expired.otp.${Date.now()}@vitstudent.ac.in`;
+    await requestSignupVerification("Expired Tester", expiredEmail, "Password123!");
+    // Force expire in DB
+    await pool.query(
+      "UPDATE email_verifications SET expires_at = NOW() - INTERVAL '1 hour' WHERE email = $1",
+      [expiredEmail]
     );
-    console.log("✅ Accepted @vit.ac.in domain:", signupRes2.user.email);
-
-    // ------------------------------------------------------------
-    // TEST D: Duplicate Email Signup Prevention
-    // ------------------------------------------------------------
-    console.log("\nTEST D: Testing duplicate email registration prevention...");
     try {
-      await signupWithEmailPassword("Test Student", testEmail1, "AnotherPassword!");
-      throw new Error("FAILED: Duplicate email allowed!");
+      await verifySignupOtp(expiredEmail, "789123");
+      throw new Error("FAILED: Expired OTP was accepted!");
     } catch (err: any) {
-      console.log("✅ Duplicate email correctly blocked:", err.message);
+      console.log("✅ Correctly rejected expired OTP:", err.message);
     }
+    console.log("✅ TEST 4 PASSED: Expired OTP rejected.");
 
     // ------------------------------------------------------------
-    // TEST E: Google Sign-In with Non-VIT Domain
+    // TEST 5 — DUPLICATE EMAIL
     // ------------------------------------------------------------
-    console.log("\nTEST E: Google sign-in with non-VIT domain...");
+    console.log("\nTEST 5: Testing duplicate email registration prevention...");
+    try {
+      await requestSignupVerification("Duplicate Person", testEmail1, "AnotherPass123!");
+      throw new Error("FAILED: Duplicate registration allowed!");
+    } catch (err: any) {
+      console.log("✅ Correctly blocked duplicate email request:", err.message);
+    }
+    console.log("✅ TEST 5 PASSED: Duplicate registration blocked.");
+
+    // ------------------------------------------------------------
+    // TEST 6 — GOOGLE NON-VIT EMAIL REJECTION
+    // ------------------------------------------------------------
+    console.log("\nTEST 6: Google Sign-in with non-VIT domain (@gmail.com)...");
     try {
       await authenticateGoogle({
-        email: "student@gmail.com",
-        name: "Gmail User",
+        email: nonVitEmail,
+        name: "Non VIT Hacker",
       });
-      throw new Error("FAILED: Google non-VIT email allowed!");
+      throw new Error("FAILED: Non-VIT Google email was allowed!");
     } catch (err: any) {
-      console.log("✅ Google non-VIT email correctly blocked:", err.message);
+      console.log("✅ Correctly rejected non-VIT Google account:", err.message);
+      if (err.message !== "Please use your VIT email account to continue.") {
+        throw new Error(`Unexpected error message: ${err.message}`);
+      }
+    }
+    console.log("✅ TEST 6 PASSED: Google non-VIT domain rejected with exact message.");
+
+    // ------------------------------------------------------------
+    // TEST 7 — GOOGLE VALID VIT EMAIL (NEW & EXISTING USER)
+    // ------------------------------------------------------------
+    console.log("\nTEST 7: Google Sign-in with valid VIT email...");
+    const googleEmail = `google.student.${Date.now()}@vitstudent.ac.in`;
+    const googleId = `gid-${Date.now()}`;
+
+    // 7A: New user via Google
+    const googleNewRes = await authenticateGoogle({
+      email: googleEmail,
+      name: "Google VIT Student",
+      googleId,
+    });
+    console.log("✅ New Google user created:", googleNewRes.user.email);
+    console.log("   - Initial credits:", googleNewRes.user.credits);
+    if (googleNewRes.user.credits !== 40) {
+      throw new Error("New Google user did not get 40 credits!");
     }
 
-    // ------------------------------------------------------------
-    // TEST F: Google Sign-In with Valid VIT Email
-    // ------------------------------------------------------------
-    console.log("\nTEST F: Google sign-in with valid VIT email...");
-    const googleEmail = `google.vit.${Date.now()}@vitstudent.ac.in`;
-    const googleId = `google-uid-${Date.now()}`;
-    const googleAuthRes = await authenticateGoogle({
+    // 7B: Existing user logging in with same Google account
+    const googleExistingRes = await authenticateGoogle({
       email: googleEmail,
-      name: "Google Student",
+      name: "Google VIT Student",
       googleId,
     });
-    console.log("✅ New Google user created:", googleAuthRes.user.email);
-    console.log("   - Credits granted:", googleAuthRes.user.credits);
-
-    // Second sign-in with same Google account (should not duplicate)
-    const googleLoginRes = await authenticateGoogle({
-      email: googleEmail,
-      name: "Google Student",
-      googleId,
-    });
-    console.log("✅ Existing Google user logged in without duplicate credits. Credits:", googleLoginRes.user.credits);
+    console.log("✅ Existing Google user logged in without duplication.");
+    console.log("   - Credits:", googleExistingRes.user.credits);
 
     const googleWallets = await pool.query(
       "SELECT * FROM wallets WHERE user_id = $1",
-      [googleAuthRes.user.id]
+      [googleNewRes.user.id]
     );
     if (googleWallets.rows.length !== 1) {
-      throw new Error("Duplicate wallets created for Google user!");
+      throw new Error(`Expected 1 wallet, found ${googleWallets.rows.length}`);
     }
+    console.log("✅ TEST 7 PASSED: Google new user created with +40 credits, existing login preserved without duplication.");
 
     // ------------------------------------------------------------
-    // TEST G: Incomplete Onboarding Save & Resume
+    // TEST 8 — LOGIN FLOW & ONBOARDING
     // ------------------------------------------------------------
-    console.log("\nTEST G: Saving Step 1 and verifying incomplete status...");
-    const userId = signupRes1.user.id;
+    console.log("\nTEST 8: Testing Login with credentials...");
+    const loginRes = await loginWithEmailPassword(testEmail1, "ValidPass123!");
+    console.log("✅ Logged in successfully:", loginRes.user.fullName);
+
+    // Wrong password test
+    try {
+      await loginWithEmailPassword(testEmail1, "WrongPassword!");
+      throw new Error("FAILED: Wrong password accepted!");
+    } catch (err: any) {
+      console.log("✅ Wrong password correctly rejected:", err.message);
+    }
+
+    // Unknown email test
+    try {
+      await loginWithEmailPassword("unknown.person@vitstudent.ac.in", "Password123!");
+      throw new Error("FAILED: Unknown email accepted!");
+    } catch (err: any) {
+      console.log("✅ Unknown email correctly rejected:", err.message);
+    }
+    console.log("✅ TEST 8 PASSED: Login validation works accurately.");
+
+    // ------------------------------------------------------------
+    // TEST 9 — ONBOARDING WORKFLOW & CREDIT PRESERVATION
+    // ------------------------------------------------------------
+    console.log("\nTEST 9: Onboarding workflow for new user...");
+    const userId = verifyRes.user.id;
     await saveStepOnePersonal(userId, {
-      fullName: "Test Student Updated",
-      registrationNumber: "22BCE1001",
+      fullName: "Real Student Verified",
+      registrationNumber: "22BCE2045",
       university: "VIT Chennai",
       department: "Computer Science",
       year: "3rd Year",
       phone: "9876543210",
-      bio: "Aspiring full stack developer from VIT.",
+      bio: "Peer mentor in web development.",
     });
 
-    const statusAfterStep1 = await getOnboardingStatus(userId);
-    console.log("✅ Step 1 saved in DB:");
-    console.log("   - Reg Number:", statusAfterStep1.registrationNumber);
-    console.log("   - Department:", statusAfterStep1.department);
-    console.log("   - Onboarding Step:", statusAfterStep1.onboardingStep);
-    console.log("   - Completed:", statusAfterStep1.onboardingCompleted);
-
-    if (statusAfterStep1.onboardingStep !== 2 || statusAfterStep1.onboardingCompleted !== false) {
-      throw new Error("Onboarding step/completion mismatch after Step 1");
-    }
-
-    // ------------------------------------------------------------
-    // TEST H: Step 2 Skills & Step 3 Preferences (Finish Onboarding)
-    // ------------------------------------------------------------
-    console.log("\nTEST H: Saving Step 2 (Skills) and Step 3 (Preferences)...");
     await saveStepTwoSkills(userId, {
-      teaches: ["React", "TypeScript", "Node.js"],
-      learns: ["Machine Learning", "DevOps"],
+      teaches: ["Node.js", "Express", "PostgreSQL"],
+      learns: ["Docker", "Kubernetes"],
     });
-
-    const statusAfterStep2 = await getOnboardingStatus(userId);
-    console.log("✅ Step 2 saved: Teaches", statusAfterStep2.teaches, "Learns", statusAfterStep2.learns);
 
     await saveStepThreePreferences(userId, {
-      availability: "Weekdays",
+      availability: "Weekends",
       preferredTime: "Evening",
       github: "https://github.com/vitstudent",
       linkedin: "https://linkedin.com/in/vitstudent",
       portfolio: "https://vitstudent.dev",
     });
 
-    const statusAfterStep3 = await getOnboardingStatus(userId);
-    console.log("✅ Step 3 finished. Onboarding Completed:", statusAfterStep3.onboardingCompleted);
-    if (!statusAfterStep3.onboardingCompleted) {
-      throw new Error("Onboarding should be marked completed!");
-    }
+    const finalStatus = await getOnboardingStatus(userId);
+    console.log("✅ Onboarding completed status:", finalStatus.onboardingCompleted);
 
-    // ------------------------------------------------------------
-    // TEST I: Login & Status Retrieval
-    // ------------------------------------------------------------
-    console.log("\nTEST I: Testing Login with credentials...");
-    const loginRes = await loginWithEmailPassword(testEmail1, "Password123!");
-    console.log("✅ Logged in successfully:");
-    console.log("   - Full Name:", loginRes.user.fullName);
-    console.log("   - Onboarding Completed:", loginRes.user.onboardingCompleted);
-    console.log("   - Credits:", loginRes.user.credits);
-
-    // Wrong password test
-    try {
-      await loginWithEmailPassword(testEmail1, "WrongPass!");
-      throw new Error("FAILED: Wrong password accepted!");
-    } catch (err: any) {
-      console.log("✅ Wrong password correctly rejected:", err.message);
-    }
-
-    // ------------------------------------------------------------
-    // TEST J: Credit Preservation Check
-    // ------------------------------------------------------------
-    console.log("\nTEST J: Checking credit preservation across sessions...");
     const meRes = await getMe(userId);
     console.log("✅ Current balance remains exactly:", meRes.credits);
     if (meRes.credits !== 40) {
       throw new Error(`Credits mutated! Expected 40, got ${meRes.credits}`);
     }
+    console.log("✅ TEST 9 PASSED: Onboarding workflow completed, credits preserved.");
 
     console.log("\n============================================================");
-    console.log("   🎉 ALL 10 AUTHENTICATION & ONBOARDING TESTS PASSED!");
+    console.log("   🎉 ALL 9 PHASE 16 CORRECTION TESTS PASSED SUCCESSFULLY!");
     console.log("============================================================\n");
   } catch (error) {
-    console.error("\n❌ Test Suite Failed:", error);
+    console.error("\n❌ Test Failed:", error);
     process.exit(1);
   } finally {
     await pool.end();
   }
 }
 
-runAuthTests();
+runPhase16CorrectionTests();

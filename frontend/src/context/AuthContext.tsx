@@ -12,14 +12,22 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  signup: (fullName: string, email: string, password: string) => Promise<AuthUser>;
-  login: (email: string, password: string) => Promise<AuthUser>;
-  loginWithGoogle: (
+  requestSignupVerification: (
+    fullName: string,
     email: string,
-    name?: string,
-    avatar?: string,
-    googleId?: string
-  ) => Promise<AuthUser>;
+    password: string
+  ) => Promise<{ success: boolean; message: string; email: string }>;
+  verifySignupOtp: (email: string, otp: string) => Promise<AuthUser>;
+  login: (email: string, password: string) => Promise<AuthUser>;
+  loginWithGoogle: (payload: {
+    credential?: string;
+    idToken?: string;
+    accessToken?: string;
+    email?: string;
+    name?: string;
+    avatar?: string;
+    googleId?: string;
+  }) => Promise<AuthUser>;
   logout: () => void;
   refreshUser: () => Promise<void>;
   updateUser: (partial: Partial<AuthUser>) => void;
@@ -79,8 +87,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("skillswap_auth_user", JSON.stringify(newUser));
   };
 
-  const signup = async (fullName: string, email: string, password: string) => {
-    const res = await authApi.signup(fullName, email, password);
+  const requestSignupVerification = async (
+    fullName: string,
+    email: string,
+    password: string
+  ) => {
+    const res = await authApi.requestSignupVerification(fullName, email, password);
+    return {
+      success: res.success,
+      message: res.message,
+      email: res.data?.email || email,
+    };
+  };
+
+  const verifySignupOtp = async (email: string, otp: string) => {
+    const res = await authApi.verifySignupOtp(email, otp);
     saveAuthSession(res.data.token, res.data.user);
     return res.data.user;
   };
@@ -91,13 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.data.user;
   };
 
-  const loginWithGoogle = async (
-    email: string,
-    name?: string,
-    avatar?: string,
-    googleId?: string
-  ) => {
-    const res = await authApi.googleAuth({ email, name, avatar, googleId });
+  const loginWithGoogle = async (payload: {
+    credential?: string;
+    idToken?: string;
+    accessToken?: string;
+    email?: string;
+    name?: string;
+    avatar?: string;
+    googleId?: string;
+  }) => {
+    const res = await authApi.googleAuth(payload);
     saveAuthSession(res.data.token, res.data.user);
     return res.data.user;
   };
@@ -138,7 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         token,
         isAuthenticated: !!token && !!user,
         isLoading,
-        signup,
+        requestSignupVerification,
+        verifySignupOtp,
         login,
         loginWithGoogle,
         logout,

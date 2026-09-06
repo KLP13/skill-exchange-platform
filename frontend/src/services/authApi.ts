@@ -22,8 +22,15 @@ export interface AuthApiResponse {
 }
 
 export const authApi = {
-  async signup(fullName: string, email: string, password: string): Promise<AuthApiResponse> {
-    const res = await api.post<AuthApiResponse>("/auth/signup", {
+  /**
+   * Request 6-digit OTP verification code for new email/password signup
+   */
+  async requestSignupVerification(
+    fullName: string,
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; message: string; data: { email: string } }> {
+    const res = await api.post("/auth/signup/request-verification", {
       fullName,
       email,
       password,
@@ -31,6 +38,20 @@ export const authApi = {
     return res.data;
   },
 
+  /**
+   * Submit OTP and complete signup with +40 credits
+   */
+  async verifySignupOtp(email: string, otp: string): Promise<AuthApiResponse> {
+    const res = await api.post<AuthApiResponse>("/auth/signup/verify", {
+      email,
+      otp,
+    });
+    return res.data;
+  },
+
+  /**
+   * Email + Password Login
+   */
   async login(email: string, password: string): Promise<AuthApiResponse> {
     const res = await api.post<AuthApiResponse>("/auth/login", {
       email,
@@ -39,8 +60,14 @@ export const authApi = {
     return res.data;
   },
 
+  /**
+   * Real Google Authentication (with Google credential or token)
+   */
   async googleAuth(payload: {
-    email: string;
+    credential?: string;
+    idToken?: string;
+    accessToken?: string;
+    email?: string;
     name?: string;
     avatar?: string;
     googleId?: string;
@@ -49,6 +76,9 @@ export const authApi = {
     return res.data;
   },
 
+  /**
+   * Fetch authenticated user info
+   */
   async getMe(): Promise<{ success: boolean; data: AuthUser }> {
     const res = await api.get<{ success: boolean; data: AuthUser }>("/auth/me");
     return res.data;
