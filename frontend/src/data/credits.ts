@@ -12,16 +12,9 @@ export interface CreditTransaction {
   role?: "mentor" | "learner";
 }
 
-export const DEFAULT_STARTING_BALANCE = 35;
+export const DEFAULT_STARTING_BALANCE = 40;
 
-export const INITIAL_USER_CREDITS: Record<string, number> = {
-  chidvi: 35,
-  "1": 35, // Priya Sharma
-  "2": 35, // Rahul Verma
-  "3": 35, // Sneha Reddy
-  "4": 35, // Arjun Mehta
-  "5": 35, // Ananya Rao
-  "6": 35, // Karthik Kumar
-};
+export const INITIAL_USER_CREDITS: Record<string, number> = {};
+
 
 export const initialTransactions: CreditTransaction[] = [];

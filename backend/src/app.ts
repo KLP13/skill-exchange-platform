@@ -29,19 +29,28 @@ app.use(
   })
 );
 
+import skillsRoutes from "./modules/skills/skillsRoutes";
+import mentorsRoutes from "./modules/mentors/mentorsRoutes";
+import sessionsRoutes from "./modules/sessions/sessionsRoutes";
+import walletRoutes from "./modules/wallet/walletRoutes";
+import messagesRoutes from "./modules/messages/messagesRoutes";
+import notificationsRoutes from "./modules/notifications/notificationsRoutes";
+import reviewsRoutes from "./modules/reviews/reviewsRoutes";
+import notesRoutes from "./modules/notes/notesRoutes";
+
 // ─── Routes ───────────────────────────────────────────────────────────────────
 
 app.use("/api/health", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/onboarding", onboardingRoutes);
-
-// Future route groups will be added here as new phases are implemented:
-//   app.use("/api/users",         userRoutes);
-//   app.use("/api/skills",        skillRoutes);
-//   app.use("/api/sessions",      sessionRoutes);
-//   app.use("/api/messages",      messageRoutes);
-//   app.use("/api/notifications", notificationRoutes);
-//   app.use("/api/wallet",        walletRoutes);
+app.use("/api/skills", skillsRoutes);
+app.use("/api/mentors", mentorsRoutes);
+app.use("/api/sessions", sessionsRoutes);
+app.use("/api/wallet", walletRoutes);
+app.use("/api/messages", messagesRoutes);
+app.use("/api/notifications", notificationsRoutes);
+app.use("/api/reviews", reviewsRoutes);
+app.use("/api/notes", notesRoutes);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 

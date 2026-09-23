@@ -5,9 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  isVitEmail,
+  isValidEmailFormat,
   normalizeEmail,
-  VIT_EMAIL_ERROR,
 } from "@/utils/vitEmailValidation";
 
 interface GoogleAuthModalProps {
@@ -28,25 +27,6 @@ export default function GoogleAuthModal({
 
   if (!isOpen) return null;
 
-  const handleSelectAccount = (selectedEmail: string, selectedName: string) => {
-    setError(null);
-    const normalized = normalizeEmail(selectedEmail);
-
-    if (!isVitEmail(normalized)) {
-      setError(
-        "Access denied: Google account email must end with @vitstudent.ac.in or @vit.ac.in."
-      );
-      return;
-    }
-
-    setIsSubmitting(true);
-    onSuccess({
-      email: normalized,
-      name: selectedName,
-      avatar: selectedName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2),
-    });
-  };
-
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -57,12 +37,12 @@ export default function GoogleAuthModal({
       return;
     }
 
-    if (!isVitEmail(cleanEmail)) {
-      setError(VIT_EMAIL_ERROR);
+    if (!isValidEmailFormat(cleanEmail)) {
+      setError("Please enter a valid email address.");
       return;
     }
 
-    const cleanName = name.trim() || cleanEmail.split("@")[0] || "VIT Student";
+    const cleanName = name.trim() || cleanEmail.split("@")[0] || "User";
     setIsSubmitting(true);
     onSuccess({
       email: cleanEmail,
@@ -87,7 +67,7 @@ export default function GoogleAuthModal({
           <FcGoogle className="h-7 w-7" />
           <div>
             <h3 className="text-lg font-bold text-gray-900">Sign in with Google</h3>
-            <p className="text-xs text-gray-500">Choose a verified VIT Google account</p>
+            <p className="text-xs text-gray-500">Sign in with any verified Google account</p>
           </div>
         </div>
 
@@ -99,67 +79,13 @@ export default function GoogleAuthModal({
           </div>
         )}
 
-        {/* Quick select demo VIT accounts */}
-        <div className="mb-4 space-y-2">
-          <Label className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-            Sample Google Accounts
-          </Label>
-
-          <button
-            type="button"
-            onClick={() =>
-              handleSelectAccount("chidvi@vitstudent.ac.in", "Chidvi Reddy")
-            }
-            className="flex w-full items-center gap-3 rounded-xl border border-gray-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50/50"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-violet-600 font-bold text-white text-xs">
-              CR
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900">Chidvi Reddy</p>
-              <p className="truncate text-xs text-gray-500">chidvi@vitstudent.ac.in</p>
-            </div>
-            <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-              VIT Student
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              handleSelectAccount("priya.sharma@vitstudent.ac.in", "Priya Sharma")
-            }
-            className="flex w-full items-center gap-3 rounded-xl border border-gray-200 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50/50"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-600 font-bold text-white text-xs">
-              PS
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-gray-900">Priya Sharma</p>
-              <p className="truncate text-xs text-gray-500">priya.sharma@vitstudent.ac.in</p>
-            </div>
-            <span className="rounded-md bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-              VIT Student
-            </span>
-          </button>
-        </div>
-
-        <div className="relative my-4">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-white px-2 text-gray-400">or enter Google email</span>
-          </div>
-        </div>
-
         {/* Custom Google Account Entry */}
         <form onSubmit={handleManualSubmit} className="space-y-3">
           <div>
             <Label htmlFor="google-name" className="text-xs">Full Name</Label>
             <Input
               id="google-name"
-              placeholder="Your name"
+              placeholder="Your full name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="mt-1 h-10"
@@ -171,7 +97,7 @@ export default function GoogleAuthModal({
             <Input
               id="google-email"
               type="email"
-              placeholder="e.g. yourname@vitstudent.ac.in"
+              placeholder="e.g. name@gmail.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="mt-1 h-10"

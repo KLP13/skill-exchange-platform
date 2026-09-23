@@ -1,4 +1,4 @@
-import { createContext, useMemo, useState } from "react";
+import { createContext, useMemo, useState, useEffect, useRef, useCallback } from "react";
 import type { ReactNode } from "react";
 import {
   initialConversations,
@@ -7,11 +7,15 @@ import {
 import type { Conversation, Message } from "@/data/messages";
 import { useSessions } from "@/hooks/useSessions";
 import { useNotifications } from "@/hooks/useNotifications";
+import { messageApi } from "@/services/messageApi";
 
 export interface ChatContextType {
   conversations: Conversation[];
   messages: Message[];
   totalUnreadCount: number;
+  activeConversationId: string | null;
+  setActiveConversationId: (id: string | null) => void;
+  syncChat: () => Promise<void>;
   getConversationById: (id: string | undefined) => Conversation | undefined;
   getConversationByParticipantName: (
     name: string
@@ -50,20 +54,145 @@ const getCurrentTimeFormatted = (): string => {
 
 export const ChatProvider = ({ children }: { children: ReactNode }) => {
   const { currentUser, users, getUserById } = useSessions();
-  const { addNotification } = useNotifications();
+  const {
+    addNotification,
+    markNotificationsAsReadByRelatedId,
+    markMessageNotificationsAsRead,
+  } = useNotifications();
 
   const [rawConversations, setRawConversations] =
     useState<Conversation[]>(initialConversations);
   const [messages, setMessages] = useState<Message[]>(initialMessages);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const activeConversationIdRef = useRef<string | null>(null);
+  activeConversationIdRef.current = activeConversationId;
+  const isSyncingRef = useRef(false);
+  const loadedInitialMessagesRef = useRef<Set<string>>(new Set());
+
+  // Real-time synchronization of conversations and messages
+  const syncChat = useCallback(async () => {
+    if (!currentUser?.id || isSyncingRef.current) return;
+    isSyncingRef.current = true;
+    try {
+      // 1. Fetch latest conversations
+      const liveConvs = await messageApi.getConversations();
+      if (liveConvs && liveConvs.length > 0) {
+        setRawConversations((prev) => {
+          const liveIds = new Set(liveConvs.map((c) => c.id));
+          const remainingLocal = prev.filter((c) => !liveIds.has(c.id));
+          return [...liveConvs, ...remainingLocal];
+        });
+
+        // 2. Determine which conversations to sync messages for:
+        // - Currently active conversation
+        // - Any conversation with unreadCount > 0
+        // - Top 3 most recent conversations
+        const convIdsToSync = new Set<string>();
+        if (activeConversationIdRef.current) {
+          convIdsToSync.add(activeConversationIdRef.current);
+        }
+        liveConvs.forEach((c) => {
+          if ((c.unreadCount && c.unreadCount > 0) || convIdsToSync.size < 4) {
+            convIdsToSync.add(c.id);
+          }
+        });
+
+        // 3. Fetch messages for conversations in parallel
+        await Promise.all(
+          Array.from(convIdsToSync).map(async (convId) => {
+            if (convId.startsWith("c-")) return;
+            try {
+              const liveMsgs = await messageApi.getMessages(convId);
+              if (liveMsgs && liveMsgs.length > 0) {
+                setMessages((prevMsgs) => {
+                  const map = new Map<string, Message>();
+                  prevMsgs.forEach((m) => map.set(m.id, m));
+                  let hasChanges = false;
+                  liveMsgs.forEach((lm) => {
+                    const existing = map.get(lm.id);
+                    if (!existing) {
+                      map.set(lm.id, lm);
+                      hasChanges = true;
+                    } else if (
+                      existing.isRead !== lm.isRead ||
+                      existing.read !== lm.read ||
+                      existing.text !== lm.text
+                    ) {
+                      map.set(lm.id, { ...existing, ...lm });
+                      hasChanges = true;
+                    }
+                  });
+                  return hasChanges ? Array.from(map.values()) : prevMsgs;
+                });
+
+                // If currently viewing this conversation, mark unread messages as read automatically
+                if (convId === activeConversationIdRef.current) {
+                  const hasUnread = liveMsgs.some(
+                    (m) => m.receiverId === currentUser.id && (!m.read && !m.isRead)
+                  );
+                  if (hasUnread) {
+                    messageApi.markAsRead(convId).catch(() => {});
+                    markNotificationsAsReadByRelatedId(convId, currentUser.id);
+                  }
+                }
+              }
+            } catch {
+              // ignore individual conversation fetch failure
+            }
+          })
+        );
+      }
+    } catch (err) {
+      console.warn("Real-time chat sync notice:", err);
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [currentUser?.id, markNotificationsAsReadByRelatedId]);
+
+  // Periodic polling & online/focus recovery
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    // Initial sync
+    syncChat();
+
+    // Regular background polling (2.5s) when window is visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        syncChat();
+      }
+    }, 2500);
+
+    // Immediate sync when device comes back online or window regains focus
+    const handleOnline = () => {
+      syncChat();
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        syncChat();
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [currentUser?.id, syncChat]);
 
   // Derive user-specific conversation list dynamically for currentUser
   const userConversations: Conversation[] = useMemo(() => {
     return rawConversations
-      .filter((c) => c.participantIds.includes(currentUser.id))
+      .filter((c) => !c.participantIds || c.participantIds.includes(currentUser.id))
       .map((c) => {
-        const otherParticipantId = c.participantIds.find(
-          (id) => id !== currentUser.id
-        );
+        const otherParticipantId =
+          c.participantIds?.find((id) => id !== currentUser.id) ||
+          c.participantId;
         const otherUser = otherParticipantId
           ? getUserById(otherParticipantId) ||
             users.find((u) => u.id === otherParticipantId)
@@ -75,9 +204,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
             ? convMessages[convMessages.length - 1]
             : undefined;
 
-        const unreadCount = convMessages.filter(
-          (m) => m.receiverId === currentUser.id && (!m.read && !m.isRead)
-        ).length;
+        const unreadCount =
+          convMessages.length > 0
+            ? convMessages.filter((m) => m.receiverId === currentUser.id && (!m.read && !m.isRead)).length
+            : c.unreadCount || 0;
 
         const participantName =
           otherUser?.name ||
@@ -109,12 +239,10 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       });
   }, [rawConversations, currentUser.id, getUserById, users, messages]);
 
-  // Total unread messages for currentUser
+  // Total unread messages for currentUser across all conversations
   const totalUnreadCount = useMemo(() => {
-    return messages.filter(
-      (m) => m.receiverId === currentUser.id && (!m.read && !m.isRead)
-    ).length;
-  }, [messages, currentUser.id]);
+    return userConversations.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+  }, [userConversations]);
 
   const getConversationById = (
     id: string | undefined
@@ -214,9 +342,44 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     conversationId: string | undefined
   ): Message[] => {
     if (!conversationId) return [];
+
+    // Lazily fetch messages from backend on initial open if not yet loaded
+    if (!loadedInitialMessagesRef.current.has(conversationId) && !conversationId.startsWith("c-")) {
+      loadedInitialMessagesRef.current.add(conversationId);
+      messageApi
+        .getMessages(conversationId)
+        .then((liveMsgs) => {
+          if (liveMsgs && liveMsgs.length > 0) {
+            setMessages((prevMsgs) => {
+              const map = new Map<string, Message>();
+              prevMsgs.forEach((m) => map.set(m.id, m));
+              let hasChanges = false;
+              liveMsgs.forEach((lm) => {
+                const existing = map.get(lm.id);
+                if (!existing) {
+                  map.set(lm.id, lm);
+                  hasChanges = true;
+                } else if (
+                  existing.isRead !== lm.isRead ||
+                  existing.read !== lm.read ||
+                  existing.text !== lm.text
+                ) {
+                  map.set(lm.id, { ...existing, ...lm });
+                  hasChanges = true;
+                }
+              });
+              return hasChanges ? Array.from(map.values()) : prevMsgs;
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not fetch messages from backend:", err);
+        });
+    }
+
     // Ensure current user is a participant of the conversation
     const conv = rawConversations.find((c) => c.id === conversationId);
-    if (!conv || !conv.participantIds.includes(currentUser.id)) {
+    if (!conv || (conv.participantIds && !conv.participantIds.includes(currentUser.id))) {
       return [];
     }
     return messages.filter((m) => m.conversationId === conversationId);
@@ -227,19 +390,22 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
     if (!trimmed) return;
 
     const conv = rawConversations.find((c) => c.id === conversationId);
-    if (!conv || !conv.participantIds.includes(currentUser.id)) {
+    if (!conv || (conv.participantIds && !conv.participantIds.includes(currentUser.id))) {
       return;
     }
 
     // Receiver is the other participant
     const receiverId =
-      conv.participantIds.find((id) => id !== currentUser.id) ||
-      conv.participantIds[0];
+      conv.participantIds?.find((id) => id !== currentUser.id) ||
+      conv.participantId ||
+      conv.participantIds?.[0] ||
+      "";
 
     const timeFormatted = getCurrentTimeFormatted();
+    const tempId = `m-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
     const newMessage: Message = {
-      id: `m-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: tempId,
       conversationId,
       senderId: currentUser.id,
       receiverId,
@@ -250,7 +416,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       isRead: false,
     };
 
-    // Update messages state
+    // Update messages state optimistically
     setMessages((prev) => [...prev, newMessage]);
 
     // Update conversation lastMessage & move to top
@@ -282,6 +448,47 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
       relatedRoute: `/messages/${conversationId}`,
       group: "today",
     });
+
+    // Send to backend PostgreSQL
+    messageApi
+      .sendMessage({
+        conversationId: conversationId.startsWith("c-") ? undefined : conversationId,
+        recipientId: receiverId,
+        text: trimmed,
+        sessionId: conv.sessionId,
+      })
+      .then((savedMsg) => {
+        if (savedMsg) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === tempId
+                ? {
+                    ...savedMsg,
+                    senderName: currentUser.name,
+                    timestamp: timeFormatted,
+                  }
+                : m
+            )
+          );
+          if (
+            savedMsg.conversationId &&
+            savedMsg.conversationId !== conversationId
+          ) {
+            setRawConversations((prev) =>
+              prev.map((c) =>
+                c.id === conversationId
+                  ? { ...c, id: savedMsg.conversationId }
+                  : c
+              )
+            );
+          }
+          // Immediate sync to ensure latest state
+          syncChat();
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not save message to backend, keeping local copy:", err);
+      });
   };
 
   const markConversationAsRead = (conversationId: string) => {
@@ -301,6 +508,15 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         return m;
       })
     );
+
+    // Clear notifications for this conversation in notifications tab & badge immediately
+    markNotificationsAsReadByRelatedId(conversationId, currentUser.id);
+
+    if (!conversationId.startsWith("c-")) {
+      messageApi.markAsRead(conversationId).catch((err) => {
+        console.warn("Failed to mark conversation read on backend:", err);
+      });
+    }
   };
 
   const markAllAsRead = () => {
@@ -316,6 +532,7 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         return m;
       })
     );
+    markMessageNotificationsAsRead(currentUser.id);
   };
 
   return (
@@ -324,6 +541,9 @@ export const ChatProvider = ({ children }: { children: ReactNode }) => {
         conversations: userConversations,
         messages,
         totalUnreadCount,
+        activeConversationId,
+        setActiveConversationId,
+        syncChat,
         getConversationById,
         getConversationByParticipantName,
         getOrCreateConversation,

@@ -1,0 +1,80 @@
+services:
+  # ==========================================
+  # Database Service: PostgreSQL 15
+  # ==========================================
+  db:
+    image: postgres:15-alpine
+    container_name: skillswap-db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      POSTGRES_DB: ${POSTGRES_DB:-skillswap}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d skillswap"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - skillswap-network
+
+  # ==========================================
+  # Backend API Service: Node.js Express
+  # ==========================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: klprasad/skillswap-backend:v1.0
+    container_name: skillswap-backend
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${POSTGRES_USER:-postgres}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-postgrespassword}
+      DB_NAME: ${POSTGRES_DB:-skillswap}
+      JWT_SECRET: ${JWT_SECRET:-supersecretjwtkeyforcampusdevops2026}
+      CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - skillswap-network
+
+  # ==========================================
+  # Frontend Web Service: React (Vite + Nginx)
+  # ==========================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: klprasad/skillswap-frontend:v1.0
+    container_name: skillswap-frontend
+    restart: always
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - skillswap-network
+
+volumes:
+  pgdata:
+    driver: local
+
+networks:
+  skillswap-network:
+    driver: bridge

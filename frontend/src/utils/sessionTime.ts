@@ -551,3 +551,82 @@ export const getAvailableSlotsForDate = (
 
   return slots;
 };
+
+/**
+ * Converts a time string (e.g. "5:30 PM", "17:30", "11:00 AM") into minutes from midnight.
+ */
+export const parseSingleTimeToMinutes = (timeStr: string | undefined): number | null => {
+  if (!timeStr) return null;
+  const clean = timeStr.trim();
+  // 1. Try 24h "HH:MM"
+  if (/^\d{1,2}:\d{2}$/.test(clean)) {
+    const [h, m] = clean.split(":").map(Number);
+    return h * 60 + m;
+  }
+  // 2. Try 12h "H:MM AM/PM"
+  const match = clean.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+  if (!match) return null;
+  let hours = parseInt(match[1], 10);
+  const minutes = parseInt(match[2], 10);
+  const meridian = match[3]?.toUpperCase();
+  if (meridian === "PM" && hours < 12) hours += 12;
+  if (meridian === "AM" && hours === 12) hours = 0;
+  return hours * 60 + minutes;
+};
+
+/**
+ * Calculates and formats a clean session duration string (e.g. "30 Min", "60 Min").
+ * Prioritizes actual booked minutes, time difference between start and end time, or duration string.
+ */
+export const formatSessionDuration = (
+  session:
+    | {
+        duration?: string;
+        durationMinutes?: number;
+        duration_minutes?: number;
+        time?: string;
+        startTime?: string;
+        endTime?: string;
+      }
+    | undefined
+    | null
+): string => {
+  if (!session) return "30 Min";
+
+  // 1. If explicit duration string already has a number
+  if (session.duration) {
+    const match = session.duration.match(/\d+/);
+    if (match) {
+      return `${match[0]} Min`;
+    }
+  }
+
+  // 2. If durationMinutes is present
+  const mins = session.durationMinutes ?? session.duration_minutes;
+  if (typeof mins === "number" && mins > 0) {
+    return `${mins} Min`;
+  }
+
+  // 3. If startTime & endTime are explicitly provided
+  if (session.startTime && session.endTime) {
+    const startM = parseSingleTimeToMinutes(session.startTime);
+    const endM = parseSingleTimeToMinutes(session.endTime);
+    if (startM !== null && endM !== null && endM > startM) {
+      return `${endM - startM} Min`;
+    }
+  }
+
+  // 4. Calculate from time range e.g. "5:00 PM – 5:30 PM" or "17:00 - 17:30"
+  if (session.time && (session.time.includes("–") || session.time.includes("-"))) {
+    const parts = session.time.split(/–|-/);
+    if (parts.length >= 2) {
+      const startM = parseSingleTimeToMinutes(parts[0]);
+      const endM = parseSingleTimeToMinutes(parts[1]);
+      if (startM !== null && endM !== null && endM > startM) {
+        return `${endM - startM} Min`;
+      }
+    }
+  }
+
+  return "30 Min";
+};

@@ -1,5 +1,6 @@
-import { createContext, useState } from "react";
+import { createContext, useState, useEffect } from "react";
 import type { ReactNode } from "react";
+import { useAuth } from "./AuthContext";
 import {
   INITIAL_USER_CREDITS,
   DEFAULT_STARTING_BALANCE,
@@ -34,12 +35,45 @@ export const WalletContext = createContext<WalletContextType | undefined>(
   undefined
 );
 
+import { walletApi } from "@/services/walletApi";
+
 export const WalletProvider = ({ children }: { children: ReactNode }) => {
+  const { user: authUser } = useAuth();
   const [userInitialBalances, setUserInitialBalances] = useState<
     Record<string, number>
   >(INITIAL_USER_CREDITS);
   const [transactions, setTransactions] =
     useState<CreditTransaction[]>(initialTransactions);
+
+  useEffect(() => {
+    if (authUser?.id) {
+      walletApi
+        .getWallet()
+        .then((walletData) => {
+          if (walletData) {
+            setUserInitialBalances((prev) => ({
+              ...prev,
+              [authUser.id]: walletData.balance,
+            }));
+            if (walletData.transactions && walletData.transactions.length > 0) {
+              setTransactions((prev) => {
+                const existingOthers = prev.filter((t) => t.userId !== authUser.id);
+                return [...walletData.transactions, ...existingOthers];
+              });
+            }
+          }
+        })
+        .catch(() => {
+          setUserInitialBalances((prev) => ({
+            ...prev,
+            [authUser.id]:
+              authUser.credits !== undefined
+                ? authUser.credits
+                : (prev[authUser.id] ?? DEFAULT_STARTING_BALANCE),
+          }));
+        });
+    }
+  }, [authUser]);
 
   const getUserTransactions = (
     userId: string | undefined
@@ -50,19 +84,19 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
 
   const getUserBalance = (userId: string | undefined): number => {
     if (!userId) return DEFAULT_STARTING_BALANCE;
-    const userTxs = getUserTransactions(userId);
-    const netTransactions = userTxs.reduce((sum, t) => sum + t.amount, 0);
-    const initial =
-      userInitialBalances[userId] !== undefined
-        ? userInitialBalances[userId]
-        : DEFAULT_STARTING_BALANCE;
-    return Math.max(0, initial + netTransactions);
+    if (userInitialBalances[userId] !== undefined) {
+      return userInitialBalances[userId];
+    }
+    if (authUser && authUser.id === userId && authUser.credits !== undefined) {
+      return authUser.credits;
+    }
+    return DEFAULT_STARTING_BALANCE;
   };
 
   const getUserTotalEarned = (userId: string | undefined): number => {
     if (!userId) return 0;
     return getUserTransactions(userId)
-      .filter((t) => t.amount > 0)
+      .filter((t) => t.amount > 0 && !t.description.toLowerCase().includes("signup") && !t.description.toLowerCase().includes("welcome"))
       .reduce((sum, t) => sum + t.amount, 0);
   };
 
@@ -88,15 +122,16 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
 
   const canAffordBooking = (
     cost: number = 5,
-    userId: string = "chidvi"
+    userId?: string
   ): boolean => {
-    return getUserBalance(userId) >= cost;
+    const targetUserId = userId || authUser?.id;
+    return getUserBalance(targetUserId) >= cost;
   };
 
   const addTransaction = (
     tx: Omit<CreditTransaction, "id"> & { id?: string }
   ): CreditTransaction | null => {
-    const targetUserId = tx.userId || "chidvi";
+    const targetUserId = tx.userId || authUser?.id || "student";
 
     // 1. Prevent duplicate transactions for the same userId + sessionId + type
     if (
@@ -132,6 +167,10 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     };
 
     setTransactions((prev) => [newTx, ...prev]);
+    setUserInitialBalances((prev) => ({
+      ...prev,
+      [targetUserId]: Math.max(0, (prev[targetUserId] ?? DEFAULT_STARTING_BALANCE) + newTx.amount),
+    }));
     return newTx;
   };
 
@@ -204,6 +243,11 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
     }
 
     setTransactions((prev) => [...newTransactionsToAdd, ...prev]);
+    setUserInitialBalances((prev) => ({
+      ...prev,
+      ...(!learnerAlreadyProcessed ? { [learnerId]: Math.max(0, (prev[learnerId] ?? DEFAULT_STARTING_BALANCE) - 5) } : {}),
+      ...(!mentorAlreadyProcessed ? { [mentorId]: (prev[mentorId] ?? DEFAULT_STARTING_BALANCE) + 10 } : {}),
+    }));
     return { success: true };
   };
 

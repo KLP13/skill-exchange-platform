@@ -58,6 +58,7 @@ const UserGrid = ({
             credits={user.credits}
             teaches={user.teaches}
             learns={user.learns}
+            avatar={user.avatar}
           />
         ))}
       </div>

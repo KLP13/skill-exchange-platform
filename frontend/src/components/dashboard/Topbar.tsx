@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { Bell, ChevronDown, Coins, Search, Users, Check } from "lucide-react";
+import { Bell, ChevronDown, Coins, Search, Settings, Calendar, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useWallet } from "@/hooks/useWallet";
 import { useSessions } from "@/hooks/useSessions";
+import { useAuth } from "@/context/AuthContext";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type TopbarProps = {
   searchValue?: string;
@@ -19,17 +21,9 @@ const Topbar = ({
   const navigate = useNavigate();
   const { unreadCount } = useNotifications();
   const { balance } = useWallet();
-  const { currentUser, switchUserById, users } = useSessions();
+  const { currentUser } = useSessions();
+  const { user: authUser, logout } = useAuth();
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-
-  const initials =
-    currentUser.avatar ||
-    currentUser.name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
 
   return (
     <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between relative z-40">
@@ -81,23 +75,26 @@ const Topbar = ({
           )}
         </button>
 
-        {/* User Switcher Dropdown */}
+        {/* User Account Menu Dropdown */}
         <div className="relative">
           <button
             type="button"
             onClick={() => setIsUserMenuOpen((prev) => !prev)}
             className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-violet-100 bg-white px-2.5 py-1.5 sm:px-3 sm:py-2 shadow-sm transition-all duration-200 hover:shadow-md hover:border-violet-300"
           >
-            <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-violet-600 text-xs sm:text-sm font-semibold text-white">
-              {initials}
-            </div>
+            <UserAvatar
+              avatar={currentUser.avatar || authUser?.avatar}
+              name={currentUser.name || authUser?.fullName || "User"}
+              sizeClassName="h-8 w-8 sm:h-10 sm:w-10"
+              textClassName="text-xs sm:text-sm font-semibold"
+            />
 
             <div className="text-left hidden sm:block">
               <p className="text-xs sm:text-sm font-semibold text-slate-800">
-                {currentUser.name}
+                {currentUser.name || authUser?.fullName || "Student"}
               </p>
               <p className="text-[11px] text-slate-500 truncate max-w-[120px]">
-                {currentUser.role}
+                {currentUser.role || authUser?.role || "student"}
               </p>
             </div>
 
@@ -111,60 +108,82 @@ const Topbar = ({
                 onClick={() => setIsUserMenuOpen(false)}
               />
 
-              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-violet-100 bg-white p-2 shadow-2xl z-40 animate-in fade-in zoom-in-95 duration-150">
-                <div className="flex items-center gap-2 px-3 py-2 text-xs font-bold text-slate-400 border-b border-slate-100">
-                  <Users size={14} />
-                  <span>SWITCH ACTIVE USER</span>
+              <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-violet-100 bg-white p-3 shadow-2xl z-40 animate-in fade-in zoom-in-95 duration-150">
+                {/* User Info Header */}
+                <div className="flex items-center gap-3 p-2.5 rounded-xl bg-slate-50 border border-slate-100">
+                  <UserAvatar
+                    avatar={currentUser.avatar || authUser?.avatar}
+                    name={currentUser.name || authUser?.fullName || "Student"}
+                    sizeClassName="h-10 w-10"
+                    textClassName="text-sm font-bold"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-900 truncate">
+                      {currentUser.name || authUser?.fullName}
+                    </p>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {currentUser.email || authUser?.email}
+                    </p>
+                    <span className="mt-1 inline-block text-[10px] font-semibold text-violet-700 bg-violet-100 px-2 py-0.5 rounded-full capitalize">
+                      {currentUser.role || authUser?.role || "student"}
+                    </span>
+                  </div>
                 </div>
 
-                <div className="mt-1 space-y-1 max-h-64 overflow-y-auto">
-                  {users.map((u) => {
-                    const uInitials =
-                      u.avatar ||
-                      u.name
-                        .split(" ")
-                        .map((n) => n[0])
-                        .join("")
-                        .slice(0, 2)
-                        .toUpperCase();
-                    const isSelected = u.id === currentUser.id;
+                {/* Actions */}
+                <div className="mt-2 space-y-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      navigate("/settings");
+                    }}
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-900"
+                  >
+                    <Settings size={15} className="text-slate-500" />
+                    <span>Profile & Settings</span>
+                  </button>
 
-                    return (
-                      <button
-                        key={u.id}
-                        type="button"
-                        onClick={() => {
-                          switchUserById(u.id);
-                          setIsUserMenuOpen(false);
-                          navigate("/dashboard");
-                        }}
-                        className={`flex w-full cursor-pointer items-center justify-between rounded-xl px-3 py-2 text-left transition ${
-                          isSelected
-                            ? "bg-violet-50 text-violet-900 font-semibold"
-                            : "text-slate-700 hover:bg-slate-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
-                            {uInitials}
-                          </div>
-                          <div>
-                            <p className="text-xs font-bold text-slate-800">
-                              {u.name}
-                            </p>
-                            <p className="text-[10px] text-slate-500">
-                              {u.role}
-                            </p>
-                          </div>
-                        </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      navigate("/wallet");
+                    }}
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-900"
+                  >
+                    <Coins size={15} className="text-slate-500" />
+                    <span>Wallet & Credits ({balance})</span>
+                  </button>
 
-                        {isSelected && (
-                          <Check size={16} className="text-violet-600" />
-                        )}
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      navigate("/sessions");
+                    }}
+                    className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-900"
+                  >
+                    <Calendar size={15} className="text-slate-500" />
+                    <span>My Sessions</span>
+                  </button>
                 </div>
+
+                <div className="my-2 border-t border-slate-100" />
+
+                {/* Log Out */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    logout();
+                    navigate("/login");
+                  }}
+                  className="flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 hover:text-red-700"
+                >
+                  <LogOut size={15} className="text-red-500" />
+                  <span>Sign Out</span>
+                </button>
               </div>
             </>
           )}

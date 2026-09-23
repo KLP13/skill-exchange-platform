@@ -1,21 +1,10 @@
 /**
- * VIT Email Validation for Backend
- * SkillSwap requires @vitstudent.ac.in or @vit.ac.in domains exclusively.
+ * Email Validation for Backend
+ * Supports any standard, valid email address (Gmail, Outlook, campus, personal, etc.)
  */
-
-const ALLOWED_VIT_DOMAINS = ["vitstudent.ac.in", "vit.ac.in"] as const;
 
 export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
-}
-
-export function isVitEmail(email: string): boolean {
-  const normalized = normalizeEmail(email);
-  const atIndex = normalized.lastIndexOf("@");
-  if (atIndex === -1) return false;
-
-  const domain = normalized.slice(atIndex + 1);
-  return (ALLOWED_VIT_DOMAINS as readonly string[]).includes(domain);
 }
 
 export function isValidEmailFormat(email: string): boolean {
@@ -23,5 +12,15 @@ export function isValidEmailFormat(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized);
 }
 
-export const VIT_EMAIL_ERROR =
-  "Please use your VIT email address (@vitstudent.ac.in or @vit.ac.in).";
+// Backward-compatible alias that allows any valid email
+export function isVitEmail(email: string): boolean {
+  return isValidEmailFormat(email);
+}
+
+export function isValidEmail(email: string): boolean {
+  return isValidEmailFormat(email);
+}
+
+export const EMAIL_ERROR = "Please enter a valid email address.";
+export const VIT_EMAIL_ERROR = EMAIL_ERROR;
+

@@ -356,7 +356,7 @@ export default function SignupForm() {
         <Input
           id="signup-email"
           type="email"
-          placeholder="Enter your VIT email (e.g. name@vitstudent.ac.in)"
+          placeholder="Enter your email (e.g. name@example.com)"
           value={email}
           onChange={(e) => {
             setEmail(e.target.value);

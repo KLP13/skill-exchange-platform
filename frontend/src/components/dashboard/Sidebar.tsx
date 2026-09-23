@@ -13,6 +13,7 @@ import { useNotifications } from "@/hooks/useNotifications";
 import { useSessions } from "@/hooks/useSessions";
 import { useChat } from "@/hooks/useChat";
 import { isInitialRequestExpired, isRescheduleRequestExpired } from "@/utils/sessionTime";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 const menuItems = [
   {
@@ -77,15 +78,6 @@ const Sidebar = () => {
   ).length;
 
   const pendingRequestsCount = incomingInitialCount + incomingRescheduleCount;
-
-  const initials =
-    currentUser.avatar ||
-    currentUser.name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
 
   return (
     <aside className="sticky top-0 flex h-screen w-64 flex-col justify-between border-r border-violet-100 bg-white shadow-sm">
@@ -163,9 +155,12 @@ const Sidebar = () => {
           title="View your public profile"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 font-semibold text-white">
-              {initials}
-            </div>
+            <UserAvatar
+              avatar={currentUser.avatar}
+              name={currentUser.name}
+              sizeClassName="h-10 w-10"
+              textClassName="text-sm font-bold"
+            />
 
             <div className="min-w-0">
               <p className="text-sm font-bold text-slate-800 truncate">

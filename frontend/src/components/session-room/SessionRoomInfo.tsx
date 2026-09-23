@@ -7,8 +7,10 @@ import {
   Target,
 } from "lucide-react";
 import type { Session } from "@/data/sessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 import { useSessions } from "@/hooks/useSessions";
+import { formatSessionDuration } from "@/utils/sessionTime";
 
 type SessionRoomInfoProps = {
   session: Session;
@@ -60,7 +62,7 @@ const SessionRoomInfo = ({ session }: SessionRoomInfoProps) => {
               <span>Duration</span>
             </div>
             <p className="mt-1.5 text-sm font-semibold text-slate-800">
-              {session.duration}
+              {formatSessionDuration(session)}
             </p>
           </div>
 
@@ -71,7 +73,7 @@ const SessionRoomInfo = ({ session }: SessionRoomInfoProps) => {
               <span>Cost</span>
             </div>
             <p className="mt-1.5 text-sm font-semibold text-slate-800">
-              {session.credits} Credits
+              {session.credits || 5} Credits
             </p>
           </div>
         </div>
@@ -86,7 +88,7 @@ const SessionRoomInfo = ({ session }: SessionRoomInfoProps) => {
               Topic Description
             </p>
             <p className="mt-1 text-sm leading-relaxed text-slate-600">
-              {session.sessionDescription}
+              {session.sessionDescription || session.learnerGoal || `Peer mentoring session on ${session.topic}`}
             </p>
           </div>
         </div>
@@ -100,19 +102,20 @@ const SessionRoomInfo = ({ session }: SessionRoomInfoProps) => {
 
         {/* Counterpart summary */}
         <div className="mt-5 flex items-center gap-4 rounded-xl bg-violet-50/60 p-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-violet-600 font-bold text-white">
-            {isMentor
-              ? learnerDisplayName.slice(0, 2).toUpperCase()
-              : (session.mentorAvatar || mentorDisplayName.slice(0, 2).toUpperCase())}
-          </div>
-          <div>
-            <h3 className="font-semibold text-[#211653]">
+          <UserAvatar
+            avatar={isMentor ? learnerObj?.avatar : (session.mentorAvatar || mentorObj?.avatar)}
+            name={isMentor ? learnerDisplayName : mentorDisplayName}
+            sizeClassName="h-12 w-12"
+            textClassName="text-base font-bold"
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-[#211653] truncate">
               {isMentor ? learnerDisplayName : mentorDisplayName}
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-500 truncate mt-0.5">
               {isMentor
                 ? "Enrolled Learner · Peer Mentorship"
-                : `${session.mentorRole} · Teaching: ${session.teachingSkill}`}
+                : `${session.mentorRole || mentorObj?.role || "Mentor"} · Teaching: ${session.teachingSkill || session.topic || mentorObj?.teachingSkill || "Peer Mentorship"}`}
             </p>
           </div>
         </div>

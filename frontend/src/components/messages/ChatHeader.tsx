@@ -2,6 +2,7 @@ import { ArrowLeft, Calendar, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { Conversation } from "@/data/messages";
 import { useSessions } from "@/hooks/useSessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type ChatHeaderProps = {
   conversation: Conversation;
@@ -41,18 +42,15 @@ const ChatHeader = ({ conversation, onBack }: ChatHeaderProps) => {
         <button
           type="button"
           onClick={handleProfileClick}
-          className="relative cursor-pointer transition hover:opacity-90"
+          className="relative cursor-pointer transition hover:opacity-90 shrink-0"
           title={`View ${conversation.participantName}'s profile`}
         >
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-600 font-bold text-white shadow-xs">
-            {conversation.participantAvatar ||
-              (conversation.participantName || "U")
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2)}
-          </div>
+          <UserAvatar
+            avatar={conversation.participantAvatar}
+            name={conversation.participantName}
+            sizeClassName="h-11 w-11"
+            textClassName="text-sm font-bold"
+          />
           <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-green-500" />
         </button>
 

@@ -30,11 +30,18 @@ const AboutCard = ({ mentor = mentors[0] }: AboutCardProps) => {
           {mentor.bio}
         </p>
 
-        <p>
-          I've conducted more than <span className="font-semibold text-violet-700">{mentor.sessionsCount}+</span> peer
-          learning sessions covering {mentor.teachingSkill}. My sessions are beginner-friendly, interactive and
-          focused on building real projects.
-        </p>
+        {(mentor.sessionsCount || 0) > 0 ? (
+          <p>
+            I've conducted <span className="font-semibold text-violet-700">{mentor.sessionsCount}</span> peer
+            learning {mentor.sessionsCount === 1 ? "session" : "sessions"} covering {mentor.teachingSkill || "skills & development"}. My sessions are beginner-friendly, interactive and
+            focused on building real projects.
+          </p>
+        ) : (
+          <p>
+            Ready to conduct peer learning sessions covering {mentor.teachingSkill || "skills & development"}. My sessions are beginner-friendly, interactive and
+            focused on practical hands-on learning.
+          </p>
+        )}
       </div>
 
       {/* Highlights */}

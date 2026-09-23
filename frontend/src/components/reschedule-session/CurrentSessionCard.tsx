@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import type { Session } from "@/data/sessions";
 import { useSessions } from "@/hooks/useSessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type CurrentSessionCardProps = {
   session: Session;
@@ -20,10 +21,6 @@ const CurrentSessionCard = ({ session }: CurrentSessionCardProps) => {
   const learnerName = session.learnerName || learnerObj?.name || "Student";
   const mentorName = session.mentor || mentorObj?.name || "Mentor";
 
-  const displayAvatar = isMentor
-    ? learnerName.slice(0, 2).toUpperCase()
-    : (session.mentorAvatar || mentorName.slice(0, 2).toUpperCase());
-
   return (
     <section className="rounded-2xl border border-violet-100 bg-white p-7 shadow-sm">
       <h2 className="text-lg font-semibold text-[#211653]">
@@ -32,9 +29,12 @@ const CurrentSessionCard = ({ session }: CurrentSessionCardProps) => {
 
       {/* Topic and Counterpart */}
       <div className="mt-5 flex items-start gap-4 rounded-xl bg-violet-50/70 p-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-base font-bold text-white">
-          {displayAvatar}
-        </div>
+        <UserAvatar
+          avatar={isMentor ? learnerObj?.avatar : (session.mentorAvatar || mentorObj?.avatar)}
+          name={isMentor ? learnerName : mentorName}
+          sizeClassName="h-11 w-11"
+          textClassName="text-base font-bold"
+        />
         <div>
           <h3 className="font-semibold text-[#211653]">{session.topic}</h3>
           <p className="text-sm text-slate-600">

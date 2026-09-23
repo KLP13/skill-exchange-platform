@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useChat } from "@/hooks/useChat";
 import { useSessions } from "@/hooks/useSessions";
 import type { Session } from "@/data/sessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type MentorInfoCardProps = {
   session: Session;
@@ -11,26 +12,13 @@ type MentorInfoCardProps = {
 const MentorInfoCard = ({ session }: MentorInfoCardProps) => {
   const navigate = useNavigate();
   const { getOrCreateConversation } = useChat();
-  const { currentUser } = useSessions();
+  const { currentUser, getUserById } = useSessions();
 
   const isLearner = currentUser.id === session.learnerId;
+  const learnerObj = getUserById(session.learnerId);
+  const mentorObj = getUserById(session.mentorId);
 
-  const mentorInitials =
-    session.mentorAvatar ||
-    session.mentor
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-
-  const learnerName = session.learnerName || "Student Learner";
-  const learnerInitials = learnerName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  const learnerName = session.learnerName || learnerObj?.name || "Student Learner";
 
   const handleMessage = () => {
     const targetUserId = isLearner ? session.mentorId : session.learnerId;
@@ -60,9 +48,12 @@ const MentorInfoCard = ({ session }: MentorInfoCardProps) => {
 
         <div className="mt-6 flex items-center gap-5">
           {/* Avatar */}
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xl font-semibold text-white">
-            {learnerInitials}
-          </div>
+          <UserAvatar
+            avatar={learnerObj?.avatar}
+            name={learnerName}
+            sizeClassName="h-20 w-20"
+            textClassName="text-2xl font-bold"
+          />
 
           {/* Learner Details */}
           <div>
@@ -118,9 +109,12 @@ const MentorInfoCard = ({ session }: MentorInfoCardProps) => {
 
       <div className="mt-6 flex items-center gap-5">
         {/* Avatar */}
-        <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-violet-600 text-xl font-semibold text-white">
-          {mentorInitials}
-        </div>
+        <UserAvatar
+          avatar={session.mentorAvatar || mentorObj?.avatar}
+          name={session.mentor}
+          sizeClassName="h-20 w-20"
+          textClassName="text-2xl font-bold"
+        />
 
         {/* Mentor Details */}
         <div>
@@ -135,15 +129,15 @@ const MentorInfoCard = ({ session }: MentorInfoCardProps) => {
           <div className="mt-3 flex items-center gap-2">
             <Star
               size={17}
-              className="fill-amber-400 text-amber-400"
+              className={session.mentorRating && session.mentorRating > 0 ? "fill-amber-400 text-amber-400" : "text-slate-300"}
             />
 
             <span className="text-sm font-semibold text-slate-700">
-              {session.mentorRating}
+              {session.mentorRating && session.mentorRating > 0 ? session.mentorRating.toFixed(1) : "New"}
             </span>
 
             <span className="text-sm text-slate-400">
-              · {session.reviewCount} reviews
+              · {session.reviewCount && session.reviewCount > 0 ? `${session.reviewCount} ${session.reviewCount === 1 ? "review" : "reviews"}` : "No reviews yet"}
             </span>
           </div>
         </div>

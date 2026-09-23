@@ -1,5 +1,6 @@
 import { Star, Coins } from "lucide-react";
 import { Link } from "react-router-dom";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type UserCardProps = {
   id: string | number;
@@ -10,6 +11,7 @@ type UserCardProps = {
   credits: number;
   teaches: string[];
   learns: string[];
+  avatar?: string | null;
 };
 
 const UserCard = ({
@@ -21,17 +23,18 @@ const UserCard = ({
   credits,
   teaches,
   learns,
+  avatar,
 }: UserCardProps) => {
   return (
     <div className="rounded-3xl border border-violet-100 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg">
       {/* Avatar */}
       <div className="flex justify-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-violet-100 text-2xl font-bold text-violet-700">
-          {name
-            .split(" ")
-            .map((n) => n[0])
-            .join("")}
-        </div>
+        <UserAvatar
+          avatar={avatar}
+          name={name}
+          sizeClassName="h-20 w-20"
+          textClassName="text-2xl font-bold"
+        />
       </div>
 
       {/* User Details */}
@@ -50,11 +53,11 @@ const UserCard = ({
         <div className="flex items-center gap-1">
           <Star
             size={18}
-            className="fill-yellow-400 text-yellow-400"
+            className={rating > 0 ? "fill-yellow-400 text-yellow-400" : "text-slate-300"}
           />
 
           <span className="font-medium text-slate-700">
-            {rating}
+            {rating > 0 ? rating.toFixed(1) : "New"}
           </span>
         </div>
 

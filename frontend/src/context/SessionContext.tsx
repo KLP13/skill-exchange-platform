@@ -1,13 +1,16 @@
-import { createContext, useState, useEffect } from "react";
+import { createContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
-import { sessions as initialSessions } from "@/data/sessions";
 import type { Session, RescheduleRequest, SessionPdfNote } from "@/data/sessions";
 import { useWallet } from "@/hooks/useWallet";
 import { useAuth } from "@/context/AuthContext";
 
 import { useNotifications } from "@/hooks/useNotifications";
-import { users as initialUsers, createDefaultAvailability } from "@/data/mentors";
+import { createDefaultAvailability } from "@/data/mentors";
 import type { User } from "@/data/mentors";
+import { mentorApi } from "@/services/mentorApi";
+import { sessionApi } from "@/services/sessionApi";
+import { reviewApi } from "@/services/reviewApi";
+import { noteApi } from "@/services/noteApi";
 
 import {
   isSessionBeforeStart,
@@ -15,6 +18,7 @@ import {
   isRescheduleRequestExpired,
   validateSessionSchedule,
   getSessionStartDateTime,
+  formatSessionDuration,
 } from "@/utils/sessionTime";
 
 export interface SessionReview {
@@ -81,7 +85,14 @@ export interface SessionContextType {
     roleOverride?: "mentor" | "learner"
   ) => { success: boolean; error?: string };
   submitReview: (review: Omit<SessionReview, "submittedAt" | "reviewerId" | "revieweeId"> & { reviewerId?: string; revieweeId?: string }) => boolean;
-  addSession: (session: Session) => void;
+  addSession: (session: Session) => Promise<string>;
+  updateSessionTiming: (
+    sessionId: string,
+    scheduledDate: string,
+    startTime: string,
+    endTime: string,
+    status?: Session["status"]
+  ) => Promise<void>;
   sessionPdfNotes: SessionPdfNote[];
   uploadSessionNote: (params: {
     sessionId: string;
@@ -90,74 +101,41 @@ export interface SessionContextType {
   getSessionPdfNote: (
     sessionId: string | undefined
   ) => SessionPdfNote | undefined;
+  refreshSessions: () => Promise<void>;
 }
 
 export const SessionContext = createContext<SessionContextType | undefined>(
   undefined
 );
 
-const initialReviews: SessionReview[] = [
-  {
-    sessionId: "seed-r1",
-    reviewerId: "2",
-    revieweeId: "1",
-    mentor: "Priya Sharma",
-    topic: "React Basics",
-    rating: 5,
-    reviewText:
-      "Priya explained every concept clearly with practical examples. The session was interactive and really helped me understand React fundamentals.",
-    comment:
-      "Priya explained every concept clearly with practical examples. The session was interactive and really helped me understand React fundamentals.",
-    submittedAt: "2 weeks ago",
-  },
-  {
-    sessionId: "seed-r2",
-    reviewerId: "5",
-    revieweeId: "1",
-    mentor: "Priya Sharma",
-    topic: "TypeScript",
-    rating: 5,
-    reviewText:
-      "Excellent mentor! She answered every doubt patiently and provided useful resources after the session.",
-    comment:
-      "Excellent mentor! She answered every doubt patiently and provided useful resources after the session.",
-    submittedAt: "1 month ago",
-  },
-  {
-    sessionId: "seed-r3",
-    reviewerId: "6",
-    revieweeId: "1",
-    mentor: "Priya Sharma",
-    topic: "Next.js",
-    rating: 4,
-    reviewText:
-      "Very knowledgeable and friendly. The projects discussed during the session were extremely helpful.",
-    comment:
-      "Very knowledgeable and friendly. The projects discussed during the session were extremely helpful.",
-    submittedAt: "2 months ago",
-  },
-  {
-    sessionId: "seed-r4",
-    reviewerId: "1",
-    revieweeId: "2",
-    mentor: "Rahul Verma",
-    topic: "Machine Learning & Python",
-    rating: 5,
-    reviewText:
-      "Rahul gave an awesome walkthrough of ML algorithms and data preprocessing techniques in Python.",
-    comment:
-      "Rahul gave an awesome walkthrough of ML algorithms and data preprocessing techniques in Python.",
-    submittedAt: "3 weeks ago",
-  },
-];
+const createDefaultUser = (): User => ({
+  id: "",
+  name: "Student",
+  role: "student",
+  department: "General",
+  year: "1st Year",
+  rating: 0,
+  reviewCount: 0,
+  credits: 40,
+  sessionsCount: 0,
+  avatar: "ST",
+  teachingSkill: "",
+  teaches: [],
+  learns: [],
+  bio: "",
+  experienceYears: "",
+  projectsBuilt: "",
+  languages: "English",
+  availability: createDefaultAvailability(),
+});
 
 export const SessionProvider = ({ children }: { children: ReactNode }) => {
-  const [sessions, setSessions] = useState<Session[]>(initialSessions);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [rescheduleRequests, setRescheduleRequests] = useState<RescheduleRequest[]>([]);
   const [sessionPdfNotes, setSessionPdfNotes] = useState<SessionPdfNote[]>([]);
-  const [reviews, setReviews] = useState<SessionReview[]>(initialReviews);
-  const [usersState, setUsersState] = useState<User[]>(initialUsers);
-  const [currentUser, setCurrentUser] = useState<User>(initialUsers[0]);
+  const [reviews, setReviews] = useState<SessionReview[]>([]);
+  const [usersState, setUsersState] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User>(createDefaultUser());
   const [currentUserRole, setCurrentUserRole] = useState<"mentor" | "learner">("mentor");
   const { user: authUser } = useAuth();
   const { completeSessionAndProcessCredits } = useWallet();
@@ -186,7 +164,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
             role: authUser.role || "student",
             department: authUser.department || "Computer Science",
             year: "3rd Year",
-            rating: 5.0,
+            rating: 0,
             reviewCount: 0,
             credits: authUser.credits ?? 40,
             sessionsCount: 0,
@@ -212,6 +190,289 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       });
     }
   }, [authUser]);
+
+  // Load & periodically synchronize mentors directly from PostgreSQL
+  useEffect(() => {
+    const syncMentors = () => {
+      mentorApi
+        .getMentors()
+        .then((liveMentors) => {
+          if (liveMentors) {
+            setUsersState((prev) => {
+              const map = new Map<string, User>();
+              // Live mentors from PostgreSQL with their real UUIDs
+              liveMentors.forEach((m) => {
+                map.set(m.id, m);
+                if (m.email) map.set(m.email, m);
+              });
+              // Keep authenticated user if not in liveMentors
+              prev.forEach((u) => {
+                if (u.id && !map.has(u.id)) {
+                  map.set(u.id, u);
+                }
+              });
+              return Array.from(new Set(Array.from(map.values())));
+            });
+          }
+        })
+        .catch((err) => {
+          console.warn("Could not load mentors from database:", err);
+        });
+    };
+
+    syncMentors();
+    const mentorInterval = setInterval(syncMentors, 3500);
+    window.addEventListener("focus", syncMentors);
+
+    return () => {
+      clearInterval(mentorInterval);
+      window.removeEventListener("focus", syncMentors);
+    };
+  }, []);
+
+  // Synchronize live user sessions, reviews, and notes from PostgreSQL periodically
+  const refreshSessions = useCallback(async (): Promise<void> => {
+    if (!authUser?.id) return;
+    try {
+      const [liveSessions, liveReviews] = await Promise.all([
+        sessionApi.getMySessions().catch((err) => {
+          console.warn("Using local sessions fallback:", err);
+          return null;
+        }),
+        reviewApi.getMyReviews().catch((err) => {
+          console.warn("Using local reviews fallback:", err);
+          return null;
+        }),
+      ]);
+
+      // Sync reviews
+      if (liveReviews) {
+        setReviews((prev) => {
+          const map = new Map<string, SessionReview>();
+          // 1. Cached in local storage
+          try {
+            const cached = JSON.parse(localStorage.getItem("skillswap_saved_reviews") || "[]");
+            if (Array.isArray(cached)) {
+              cached.forEach((r: SessionReview) => map.set(r.sessionId, r));
+            }
+          } catch {}
+          // 2. Previous React state
+          prev.forEach((r) => map.set(r.sessionId, r));
+          // 3. Fresh from backend PostgreSQL
+          liveReviews.forEach((r: any) => {
+            map.set(r.sessionId, {
+              sessionId: r.sessionId,
+              reviewerId: r.reviewerId,
+              revieweeId: r.revieweeId,
+              mentor: r.mentor || "Mentor",
+              topic: r.topic || "Mentoring Session",
+              rating: Number(r.rating) || 5,
+              reviewText: r.reviewText || r.comment || "",
+              comment: r.comment || r.reviewText || "",
+              submittedAt: r.submittedAt || new Date().toISOString(),
+            });
+          });
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem("skillswap_saved_reviews", JSON.stringify(merged));
+          } catch {}
+          return merged;
+        });
+      }
+
+      // Sync sessions
+      if (liveSessions) {
+        setSessions((prev) => {
+          const prevMap = new Map<string, Session>();
+          prev.forEach((s) => prevMap.set(s.id, s));
+          return liveSessions.map((s) => {
+            const existing = prevMap.get(s.id);
+            const isStarted =
+              (s.status === "in_progress" || !!existing?.isStarted) &&
+              s.status !== "completed" &&
+              s.status !== "cancelled" &&
+              s.status !== "rejected";
+            const formattedDuration = formatSessionDuration({
+              duration: s.duration || existing?.duration,
+              durationMinutes: (s as any).durationMinutes || (s as any).duration_minutes || existing?.durationMinutes,
+              time: s.time || `${(s as any).startTime || "17:00"} - ${(s as any).endTime || "18:00"}`,
+              startTime: (s as any).startTime,
+              endTime: (s as any).endTime,
+            });
+            return {
+              ...s,
+              status: isStarted ? "in_progress" : s.status,
+              role: s.mentorId === authUser.id ? "mentor" : "learner",
+              mentor: (s as any).mentorName || s.mentor || "Mentor",
+              learnerName: (s as any).learnerName || s.learnerName || "Learner",
+              time: s.time || `${(s as any).startTime || "17:00"} - ${(s as any).endTime || "18:00"}`,
+              duration: formattedDuration,
+              durationMinutes:
+                (s as any).durationMinutes ||
+                (s as any).duration_minutes ||
+                existing?.durationMinutes ||
+                parseInt(formattedDuration, 10) ||
+                30,
+              isStarted: isStarted,
+              ...(isStarted ? { startedAt: existing?.startedAt || new Date().toISOString() } : {}),
+            };
+          });
+        });
+
+        // Fetch session notes for completed sessions
+        liveSessions
+          .filter((s) => s.status === "completed")
+          .forEach((s) => {
+            noteApi
+              .getNotes(s.id)
+              .then((notes) => {
+                if (notes && notes.length > 0) {
+                  const latest = notes[0];
+                  if (latest.fileName) {
+                    setSessionPdfNotes((prev) => {
+                      if (prev.some((n) => n.sessionId === s.id)) return prev;
+                      return [
+                        {
+                          id: latest.id,
+                          sessionId: s.id,
+                          mentorId: s.mentorId,
+                          learnerId: s.learnerId,
+                          fileName: latest.fileName || "Session_Notes.pdf",
+                          fileUrl: latest.fileUrl || "",
+                          fileSize: latest.fileSizeBytes,
+                          uploadedAt: latest.createdAt,
+                        },
+                        ...prev,
+                      ];
+                    });
+                  }
+                }
+              })
+              .catch(() => {});
+          });
+      }
+    } catch (err) {
+      console.warn("Using local sessions fallback:", err);
+    }
+  }, [authUser?.id]);
+
+  // Initial load of cached reviews from localStorage
+  useEffect(() => {
+    try {
+      const cached = JSON.parse(localStorage.getItem("skillswap_saved_reviews") || "[]");
+      if (Array.isArray(cached) && cached.length > 0) {
+        setReviews((prev) => {
+          const map = new Map<string, SessionReview>();
+          cached.forEach((r: SessionReview) => map.set(r.sessionId, r));
+          prev.forEach((r) => map.set(r.sessionId, r));
+          return Array.from(map.values());
+        });
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!authUser?.id) return;
+
+    refreshSessions();
+    const interval = setInterval(refreshSessions, 2500);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        refreshSessions();
+      }
+    };
+
+    window.addEventListener("focus", refreshSessions);
+    window.addEventListener("online", refreshSessions);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    // Cross-tab and window instant session and review sync
+    const handleChannelMessage = (event: MessageEvent) => {
+      if (event.data?.type === "SESSION_STARTED") {
+        const sid = event.data.sessionId;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sid
+              ? { ...s, status: "in_progress", isStarted: true, startedAt: new Date().toISOString() }
+              : s
+          )
+        );
+        refreshSessions();
+      } else if (event.data?.type === "SESSION_COMPLETED") {
+        const sid = event.data.sessionId;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === sid
+              ? { ...s, status: "completed", isStarted: false }
+              : s
+          )
+        );
+        refreshSessions();
+      } else if (event.data?.type === "REVIEW_SUBMITTED") {
+        const rev = event.data.review;
+        if (rev) {
+          setReviews((prev) => [rev, ...prev.filter((r) => r.sessionId !== rev.sessionId)]);
+        }
+        refreshSessions();
+      }
+    };
+
+    let channel: BroadcastChannel | null = null;
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        channel = new BroadcastChannel("skillswap_session_channel");
+        channel.addEventListener("message", handleChannelMessage);
+      }
+    } catch {
+      // ignore
+    }
+
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "skillswap_session_event" && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data.type === "SESSION_STARTED") {
+            const sid = data.sessionId;
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sid
+                  ? { ...s, status: "in_progress", isStarted: true, startedAt: new Date().toISOString() }
+                  : s
+              )
+            );
+            refreshSessions();
+          } else if (data.type === "SESSION_COMPLETED") {
+            const sid = data.sessionId;
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sid
+                  ? { ...s, status: "completed", isStarted: false }
+                  : s
+              )
+            );
+            refreshSessions();
+          } else if (data.type === "REVIEW_SUBMITTED" && data.review) {
+            setReviews((prev) => [data.review, ...prev.filter((r) => r.sessionId !== data.review.sessionId)]);
+            refreshSessions();
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", refreshSessions);
+      window.removeEventListener("online", refreshSessions);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      channel?.removeEventListener("message", handleChannelMessage);
+      channel?.close();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, [authUser?.id, refreshSessions]);
 
   const getUserById = (id: string | undefined): User | undefined => {
     if (!id) return undefined;
@@ -244,6 +505,7 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     userId: string,
     availability: import("@/data/mentors").DayAvailability[]
   ) => {
+    // 1. Optimistically update local state immediately
     setUsersState((prev) =>
       prev.map((user) => {
         if (user.id === userId) {
@@ -256,6 +518,29 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         return user;
       })
     );
+
+    // 2. Persist to PostgreSQL database so all other users see it immediately
+    mentorApi
+      .updateAvailability(availability)
+      .then((res) => {
+        if (res?.data) {
+          setUsersState((prev) =>
+            prev.map((user) => {
+              if (user.id === userId) {
+                const confirmed = { ...user, availability: res.data };
+                if (currentUser.id === userId) {
+                  setCurrentUser(confirmed);
+                }
+                return confirmed;
+              }
+              return user;
+            })
+          );
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to persist availability to PostgreSQL:", err);
+      });
   };
 
   const addTeachingSkill = (userId: string, skill: string): boolean => {
@@ -379,13 +664,13 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
   const getUserRating = (
     userId: string | undefined
   ): { rating: number; reviewCount: number } => {
-    if (!userId) return { rating: 5.0, reviewCount: 0 };
+    if (!userId) return { rating: 0, reviewCount: 0 };
     const userReviews = getUserReviews(userId);
     const user = getUserById(userId);
 
     if (userReviews.length === 0) {
       return {
-        rating: user?.rating || 5.0,
+        rating: user?.rating || 0,
         reviewCount: user?.reviewCount || 0,
       };
     }
@@ -418,8 +703,40 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
     return reviews.find((item) => item.sessionId === sessionId);
   };
 
-  const addSession = (newSession: Session) => {
+  const addSession = async (newSession: Session): Promise<string> => {
+    const tempId = newSession.id;
     setSessions((prev) => [newSession, ...prev]);
+    let resolvedSessionId = tempId;
+
+    // Asynchronously save booking to PostgreSQL if user is logged in
+    if (authUser?.id && newSession.mentorId) {
+      const cleanTime = (newSession.time || "17:00 - 18:00").replace(/[\u2013\u2014–—]/g, "-");
+      const times = cleanTime.split("-").map((s) => s.trim());
+      const durationNum = parseInt(newSession.duration?.match(/\d+/)?.[0] || "30", 10);
+      try {
+        const res = await sessionApi.bookSession({
+          mentorId: newSession.mentorId,
+          skillName: newSession.teachingSkill || newSession.topic,
+          topic: newSession.topic,
+          sessionDescription: newSession.sessionDescription,
+          learnerGoal: newSession.learnerGoal,
+          scheduledDate: newSession.date,
+          startTime: times[0] || "17:00",
+          endTime: times[1] || "18:00",
+          durationMinutes: durationNum,
+          credits: newSession.credits || 5,
+          status: newSession.status || "pending",
+        });
+        if (res?.sessionId) {
+          resolvedSessionId = res.sessionId;
+          setSessions((prev) =>
+            prev.map((s) => (s.id === tempId ? { ...s, id: res.sessionId } : s))
+          );
+        }
+      } catch (err) {
+        console.warn("Backend booking sync note:", err);
+      }
+    }
 
     // Notify the mentor about the new incoming request
     addNotification({
@@ -428,10 +745,47 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       title: "New session request",
       message: `${newSession.learnerName || currentUser.name || "A student"} requested a ${newSession.topic} session with you.`,
       timestamp: "Just now",
-      relatedId: newSession.id,
-      relatedRoute: `/session-details/${newSession.id}`,
+      relatedId: resolvedSessionId,
+      relatedRoute: `/session-details/${resolvedSessionId}`,
       group: "today",
     });
+
+    return resolvedSessionId;
+  };
+
+  const updateSessionTiming = async (
+    sessionId: string,
+    scheduledDate: string,
+    startTime: string,
+    endTime: string,
+    status?: Session["status"]
+  ): Promise<void> => {
+    // 1. Optimistic update
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id === sessionId) {
+          return {
+            ...s,
+            date: scheduledDate,
+            time: `${startTime} – ${endTime}`,
+            ...(status ? { status } : {}),
+          };
+        }
+        return s;
+      })
+    );
+
+    // 2. Persist to PostgreSQL backend
+    try {
+      await sessionApi.updateSessionTiming(sessionId, {
+        scheduledDate,
+        startTime,
+        endTime,
+        status,
+      });
+    } catch (err) {
+      console.warn("Could not sync updated timing to database:", err);
+    }
   };
 
   const getPendingRescheduleForSession = (
@@ -766,6 +1120,12 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       group: "today",
     });
 
+    if (!id.startsWith("s-")) {
+      sessionApi.updateSessionStatus(id, "cancelled").catch((err) => {
+        console.warn("Could not sync cancelSession to backend:", err);
+      });
+    }
+
     return true;
   };
 
@@ -798,6 +1158,12 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       relatedRoute: "/mentor-requests",
       group: "today",
     });
+
+    if (!id.startsWith("s-")) {
+      sessionApi.updateSessionStatus(id, "cancelled").catch((err) => {
+        console.warn("Could not sync cancelRequest to backend:", err);
+      });
+    }
 
     return true;
   };
@@ -838,6 +1204,12 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       group: "today",
     });
 
+    if (!id.startsWith("s-")) {
+      sessionApi.updateSessionStatus(id, "upcoming").catch((err) => {
+        console.warn("Could not sync acceptRequest to backend:", err);
+      });
+    }
+
     return true;
   };
 
@@ -877,6 +1249,12 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       group: "today",
     });
 
+    if (!id.startsWith("s-")) {
+      sessionApi.updateSessionStatus(id, "cancelled").catch((err) => {
+        console.warn("Could not sync rejectRequest to backend:", err);
+      });
+    }
+
     return true;
   };
 
@@ -912,6 +1290,31 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         return s;
       })
     );
+
+    // 1. Sync session status to PostgreSQL backend database
+    sessionApi
+      .updateSessionStatus(id, "in_progress")
+      .then(() => {
+        refreshSessions();
+      })
+      .catch((err) => {
+        console.warn("Backend startSession status update note:", err);
+      });
+
+    // 2. Broadcast immediately across open tabs and windows
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        const channel = new BroadcastChannel("skillswap_session_channel");
+        channel.postMessage({ type: "SESSION_STARTED", sessionId: id });
+        channel.close();
+      }
+      localStorage.setItem(
+        "skillswap_session_event",
+        JSON.stringify({ type: "SESSION_STARTED", sessionId: id, timestamp: Date.now() })
+      );
+    } catch {
+      // ignore
+    }
 
     // Notify the learner that the mentor started the session
     addNotification({
@@ -975,6 +1378,28 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       })
     );
 
+    // Sync completion with backend PostgreSQL
+    sessionApi
+      .updateSessionStatus(id, "completed")
+      .catch((err) => {
+        console.warn("Backend completion sync note:", err);
+      });
+
+    // Broadcast session completion immediately across open tabs and windows
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        const channel = new BroadcastChannel("skillswap_session_channel");
+        channel.postMessage({ type: "SESSION_COMPLETED", sessionId: id });
+        channel.close();
+      }
+      localStorage.setItem(
+        "skillswap_session_event",
+        JSON.stringify({ type: "SESSION_COMPLETED", sessionId: id, timestamp: Date.now() })
+      );
+    } catch {
+      // ignore
+    }
+
     // Notify learner about completion
     addNotification({
       userId: targetSession.learnerId,
@@ -1031,7 +1456,40 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       submittedAt: new Date().toISOString(),
     };
 
-    setReviews((prev) => [newReview, ...prev]);
+    setReviews((prev) => {
+      const updated = [newReview, ...prev.filter((r) => r.sessionId !== newReview.sessionId)];
+      try {
+        localStorage.setItem("skillswap_saved_reviews", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    // Broadcast review immediately across open tabs and windows
+    try {
+      if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+        const ch = new BroadcastChannel("skillswap_session_channel");
+        ch.postMessage({ type: "REVIEW_SUBMITTED", sessionId: review.sessionId, review: newReview });
+        ch.close();
+      }
+      localStorage.setItem(
+        "skillswap_session_event",
+        JSON.stringify({ type: "REVIEW_SUBMITTED", sessionId: review.sessionId, review: newReview, timestamp: Date.now() })
+      );
+    } catch {}
+
+    // Persist review to backend PostgreSQL
+    reviewApi
+      .createReview({
+        sessionId: review.sessionId,
+        rating: review.rating,
+        comment: review.reviewText,
+      })
+      .then(() => {
+        refreshSessions();
+      })
+      .catch((err) => {
+        console.warn("Could not persist review to backend, keeping local copy:", err);
+      });
 
     // Notify mentor about the review
     addNotification({
@@ -1134,6 +1592,19 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
       return [newNote, ...filtered];
     });
 
+    // Persist note to backend PostgreSQL
+    noteApi
+      .saveNotes(sessionId, {
+        fileName,
+        fileUrl,
+        fileSizeBytes: fileSize,
+        fileType: "application/pdf",
+        summary: `Notes for session on ${targetSession.topic}`,
+      })
+      .catch((err) => {
+        console.warn("Could not persist session notes to backend, keeping local copy:", err);
+      });
+
     // Notify learner
     addNotification({
       userId: targetSession.learnerId,
@@ -1196,9 +1667,11 @@ export const SessionProvider = ({ children }: { children: ReactNode }) => {
         completeSession,
         submitReview,
         addSession,
+        updateSessionTiming,
         sessionPdfNotes,
         uploadSessionNote,
         getSessionPdfNote,
+        refreshSessions,
       }}
     >
       {children}

@@ -6,6 +6,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import type { Session } from "@/data/sessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type ReviewSessionSummaryProps = {
   session: Session;
@@ -20,15 +21,12 @@ const ReviewSessionSummary = ({ session }: ReviewSessionSummaryProps) => {
 
       {/* Mentor and Topic Hero */}
       <div className="mt-5 flex items-start gap-4 rounded-xl bg-violet-50/70 p-4">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-violet-600 font-bold text-white">
-          {session.mentorAvatar ||
-            session.mentor
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2)}
-        </div>
+        <UserAvatar
+          avatar={session.mentorAvatar}
+          name={session.mentor}
+          sizeClassName="h-12 w-12"
+          textClassName="text-base font-bold"
+        />
         <div>
           <h3 className="font-semibold text-[#211653]">{session.topic}</h3>
           <p className="mt-0.5 text-xs text-slate-500">

@@ -16,7 +16,11 @@ type RequestSessionCardProps = {
 
 const RequestSessionCard = ({ mentor = mentors[0] }: RequestSessionCardProps) => {
   const { currentUser } = useSessions();
-  const isOwnProfile = currentUser.id === mentor.id;
+  const isOwnProfile =
+    (Boolean(currentUser.id) && Boolean(mentor.id) && currentUser.id === mentor.id) ||
+    mentor.id === "me" ||
+    (Boolean(currentUser.email) && Boolean(mentor.email) && currentUser.email?.toLowerCase() === mentor.email?.toLowerCase()) ||
+    (Boolean(currentUser.name) && Boolean(mentor.name) && currentUser.name.trim().toLowerCase() === mentor.name.trim().toLowerCase());
 
   return (
     <div className="sticky top-8 rounded-3xl border border-violet-100 bg-white p-6 shadow-sm">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Camera, Save, CheckCircle2, AlertCircle } from "lucide-react";
 import { useSessions } from "@/hooks/useSessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 const SettingsContent = () => {
   const { currentUser, updateUserProfile } = useSessions();
@@ -61,15 +62,6 @@ const SettingsContent = () => {
     }, 4000);
   };
 
-  const initials =
-    currentUser.avatar ||
-    name
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase();
-
   return (
     <section className="rounded-2xl border border-violet-100 bg-white p-7 shadow-sm">
       {/* Section Header */}
@@ -100,9 +92,12 @@ const SettingsContent = () => {
 
       {/* Profile Picture */}
       <div className="mt-8 flex items-center gap-5">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-violet-600 text-xl font-semibold text-white shadow-sm">
-          {initials}
-        </div>
+        <UserAvatar
+          avatar={currentUser.avatar}
+          name={name}
+          sizeClassName="h-20 w-20"
+          textClassName="text-xl font-bold"
+        />
 
         <div>
           <button

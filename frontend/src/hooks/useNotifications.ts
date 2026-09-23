@@ -10,6 +10,8 @@ export interface UseNotificationsReturn extends NotificationContextType {
   unreadCount: number;
   filteredNotifications: Notification[];
   markAsRead: (id: string, userId?: string) => void;
+  markNotificationsAsReadByRelatedId: (relatedId: string, userId?: string) => void;
+  markMessageNotificationsAsRead: (userId?: string) => void;
   markAllAsRead: (userId?: string) => void;
   addNotification: (
     notification: Omit<Notification, "id" | "isRead"> & {
@@ -45,6 +47,14 @@ export const useNotifications = (): UseNotificationsReturn => {
     notificationContext.markAsRead(id, userId || currentUserId);
   };
 
+  const markNotificationsAsReadByRelatedId = (relatedId: string, userId?: string) => {
+    notificationContext.markNotificationsAsReadByRelatedId(relatedId, userId || currentUserId);
+  };
+
+  const markMessageNotificationsAsRead = (userId?: string) => {
+    notificationContext.markMessageNotificationsAsRead(userId || currentUserId);
+  };
+
   const markAllAsRead = (userId?: string) => {
     notificationContext.markAllAsRead(userId || currentUserId);
   };
@@ -69,6 +79,8 @@ export const useNotifications = (): UseNotificationsReturn => {
     unreadCount,
     filteredNotifications,
     markAsRead,
+    markNotificationsAsReadByRelatedId,
+    markMessageNotificationsAsRead,
     markAllAsRead,
     addNotification,
   };

@@ -63,10 +63,6 @@ export async function requestSignupVerification(
     throw { status: 400, message: "A valid email address is required." };
   }
 
-  if (!isVitEmail(cleanEmail)) {
-    throw { status: 400, message: VIT_EMAIL_ERROR };
-  }
-
   if (!password || password.length < 6) {
     throw { status: 400, message: "Password must be at least 6 characters long." };
   }
@@ -80,7 +76,7 @@ export async function requestSignupVerification(
   if (existingUser.rows.length > 0) {
     throw {
       status: 409,
-      message: "An account with this VIT email already exists.",
+      message: "An account with this email address already exists.",
     };
   }
 
@@ -472,15 +468,6 @@ export async function authenticateGoogle(payload: {
 
   if (!cleanEmail || !isValidEmailFormat(cleanEmail)) {
     throw { status: 400, message: "Invalid email address received from Google." };
-  }
-
-  // Enforce VIT domain strictly on Google accounts:
-  // Must be @vitstudent.ac.in or @vit.ac.in
-  if (!isVitEmail(cleanEmail)) {
-    throw {
-      status: 403,
-      message: "Please use your VIT email account to continue.",
-    };
   }
 
   // Check if account already exists by email or googleId

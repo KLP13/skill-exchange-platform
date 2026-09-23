@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSessions } from "@/hooks/useSessions";
 import { useWallet } from "@/hooks/useWallet";
+import { useChat } from "@/hooks/useChat";
+import { mentorApi } from "@/services/mentorApi";
 import type { Session } from "@/data/sessions";
 import { validateSessionSchedule } from "@/utils/sessionTime";
 
@@ -106,13 +108,12 @@ const formatTimeRangeToDisplay = (timeStr: string, durationStr: string): string 
   return `${formattedStart} – ${formattedEnd}`;
 };
 
-// Helper: generate unique session ID
-const generateUniqueSessionId = (existingSessions: Session[]): string => {
-  const numericIds = existingSessions
-    .map((s) => parseInt(s.id, 10))
-    .filter((n) => !isNaN(n));
-  const maxId = numericIds.length > 0 ? Math.max(...numericIds) : 0;
-  return String(maxId + 1);
+// Helper: generate unique session ID (UUID)
+const generateUniqueSessionId = (_existingSessions: Session[]): string => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `sess-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 };
 
 const RequestLayout = ({
@@ -122,16 +123,32 @@ const RequestLayout = ({
   const navigate = useNavigate();
   const { sessions, addSession, currentUser, getUserById } = useSessions();
   const { canAffordBooking } = useWallet();
+  const { getOrCreateConversation, sendMessage } = useChat();
 
-  const effectiveMentorId = mentor?.id || sourceSession?.mentorId || "1";
-  const effectiveMentor = getUserById(effectiveMentorId) || mentor;
+  const effectiveMentorId = mentor?.id || sourceSession?.mentorId || "";
+  const [liveMentor, setLiveMentor] = useState<Mentor | undefined>(() => getUserById(effectiveMentorId) || mentor);
 
-  const effectiveMentorName = effectiveMentor?.name || mentor?.name || sourceSession?.mentor || "Priya Sharma";
-  const effectiveMentorRole = effectiveMentor?.role || mentor?.role || sourceSession?.mentorRole || "React Developer";
-  const effectiveMentorRating = effectiveMentor?.rating ?? mentor?.rating ?? sourceSession?.mentorRating ?? 4.9;
-  const effectiveReviewCount = effectiveMentor?.reviewCount ?? mentor?.reviewCount ?? sourceSession?.reviewCount ?? 42;
+  useEffect(() => {
+    if (effectiveMentorId) {
+      mentorApi
+        .getMentorById(effectiveMentorId)
+        .then((fresh) => {
+          if (fresh) {
+            setLiveMentor(fresh);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [effectiveMentorId]);
+
+  const effectiveMentor = liveMentor || getUserById(effectiveMentorId) || mentor;
+
+  const effectiveMentorName = effectiveMentor?.name || mentor?.name || sourceSession?.mentor || "Mentor";
+  const effectiveMentorRole = effectiveMentor?.role || mentor?.role || sourceSession?.mentorRole || "Student Mentor";
+  const effectiveMentorRating = effectiveMentor?.rating ?? mentor?.rating ?? sourceSession?.mentorRating ?? 0;
+  const effectiveReviewCount = effectiveMentor?.reviewCount ?? mentor?.reviewCount ?? sourceSession?.reviewCount ?? 0;
   const effectiveMentorAvatar = effectiveMentor?.avatar || mentor?.avatar || sourceSession?.mentorAvatar;
-  const effectiveTeachingSkill = effectiveMentor?.teachingSkill || mentor?.teachingSkill || sourceSession?.teachingSkill || "React & Frontend Development";
+  const effectiveTeachingSkill = effectiveMentor?.teachingSkill || mentor?.teachingSkill || sourceSession?.teachingSkill || "";
 
   // Initial values pre-filled from mentor or cancelled session if available
   const [topic, setTopic] = useState(
@@ -159,7 +176,7 @@ const RequestLayout = ({
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     let hasError = false;
     setTopicError(undefined);
     setGoalError(undefined);
@@ -261,10 +278,36 @@ const RequestLayout = ({
       role: "learner",
     };
 
-    addSession(newSession);
+    const finalSessionId = await addSession(newSession);
+
+    // Also send session request card into messages so mentor & learner can chat & negotiate timing
+    try {
+      if (effectiveMentorId && effectiveMentorId !== currentUser.id) {
+        const conv = getOrCreateConversation(effectiveMentorId);
+        if (conv?.id) {
+          const sessionPayload = {
+            type: "SESSION_REQUEST",
+            sessionId: finalSessionId,
+            topic: topic.trim(),
+            date: formatDateToDisplay(date),
+            rawDate: date.trim(),
+            time: formatTimeRangeToDisplay(time, duration),
+            rawTime: time.trim(),
+            duration: formattedDuration,
+            status: "pending",
+            learnerGoal: goal.trim(),
+            learnerName: currentUser.name,
+            mentorName: effectiveMentorName,
+          };
+          sendMessage(conv.id, `[SESSION_REQUEST]:${JSON.stringify(sessionPayload)}`);
+        }
+      }
+    } catch (chatErr) {
+      console.warn("Could not post session request to chat:", chatErr);
+    }
 
     navigate("/request-success", {
-      state: { session: newSession },
+      state: { session: { ...newSession, id: finalSessionId } },
     });
   };
 

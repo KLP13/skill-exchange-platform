@@ -1,6 +1,7 @@
 import { MessageSquare, ArrowRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useChat } from "@/hooks/useChat";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 const RecentChats = () => {
   const navigate = useNavigate();
@@ -57,10 +58,13 @@ const RecentChats = () => {
                     : "border border-slate-100/60 bg-slate-50/30"
                 }`}
               >
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-xs font-bold text-white shadow-2xs">
-                  {chat.participantAvatar ||
-                    (chat.participantName || "U").slice(0, 2).toUpperCase()}
-                </div>
+                <UserAvatar
+                  avatar={chat.participantAvatar}
+                  name={chat.participantName}
+                  sizeClassName="h-11 w-11"
+                  textClassName="text-xs font-bold"
+                  className="rounded-xl shadow-2xs shrink-0"
+                />
 
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1">

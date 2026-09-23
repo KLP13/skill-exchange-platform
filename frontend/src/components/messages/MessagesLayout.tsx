@@ -1,6 +1,8 @@
-import { MessageSquare, ArrowLeft } from "lucide-react";
+import { MessageSquare, ArrowLeft, Users, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { useChat } from "@/hooks/useChat";
+import { useSessions } from "@/hooks/useSessions";
 
 import Sidebar from "../dashboard/Sidebar";
 import Topbar from "../dashboard/Topbar";
@@ -14,13 +16,87 @@ type MessagesLayoutProps = {
 
 const MessagesLayout = ({ conversationId }: MessagesLayoutProps) => {
   const navigate = useNavigate();
-  const { conversations, getConversationById } = useChat();
+  const { conversations, getConversationById, getOrCreateConversation } = useChat();
+  const { currentUser, getUserById, users } = useSessions();
 
+  const isSelf =
+    Boolean(conversationId) &&
+    (conversationId === currentUser.id ||
+      conversationId === "me" ||
+      (currentUser.email && conversationId?.toLowerCase() === currentUser.email.toLowerCase()));
+
+  // Check if conversation exists directly by conversation ID
   const selectedConversation = conversationId
-    ? getConversationById(conversationId)
+    ? getConversationById(conversationId) ||
+      conversations.find((c) => c.id === conversationId)
     : undefined;
 
-  // Handle invalid or unauthorized conversation access (Step 20 & Step 21)
+  // If conversationId is a target user ID, auto-initialize conversation with that user
+  useEffect(() => {
+    if (conversationId && !selectedConversation && !isSelf) {
+      const targetUser =
+        getUserById(conversationId) || users.find((u) => u.id === conversationId);
+      if (targetUser && targetUser.id !== currentUser.id) {
+        const conv = getOrCreateConversation(targetUser.id);
+        if (conv?.id && conv.id !== conversationId) {
+          navigate(`/messages/${conv.id}`, { replace: true });
+        }
+      }
+    }
+  }, [conversationId, selectedConversation, isSelf, currentUser.id, getUserById, users, getOrCreateConversation, navigate]);
+
+  // Handle self messaging attempt
+  if (isSelf) {
+    return (
+      <div className="flex min-h-screen bg-[#f8f7fc]">
+        <Sidebar />
+
+        <main className="min-w-0 flex-1 overflow-y-auto">
+          <div className="p-6 md:p-8">
+            <Topbar />
+
+            <div className="mx-auto mt-16 max-w-lg text-center">
+              <div className="rounded-3xl border border-violet-100 bg-white p-10 shadow-sm">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
+                  <Sparkles size={32} />
+                </div>
+
+                <h2 className="mt-4 text-2xl font-bold text-[#211653]">
+                  Cannot Message Yourself
+                </h2>
+
+                <p className="mt-3 text-slate-500 text-sm leading-relaxed">
+                  You are viewing your own profile. You can connect and message other campus peer mentors and learners on SkillSwap.
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate("/explore")}
+                    className="cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-6 py-3 font-semibold text-white transition hover:bg-violet-700 hover:shadow-md"
+                  >
+                    <Users size={18} />
+                    Explore Mentors
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate("/messages")}
+                    className="cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <ArrowLeft size={18} />
+                    View Messages
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Handle invalid or unauthorized conversation access
   if (conversationId && !selectedConversation) {
     return (
       <div className="flex min-h-screen bg-[#f8f7fc]">
@@ -32,19 +108,19 @@ const MessagesLayout = ({ conversationId }: MessagesLayoutProps) => {
 
             <div className="mx-auto mt-16 max-w-lg text-center">
               <div className="rounded-3xl border border-violet-100 bg-white p-10 shadow-sm">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-100 text-red-600">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-600">
                   <MessageSquare size={32} />
                 </div>
 
                 <h2 className="mt-4 text-2xl font-bold text-[#211653]">
-                  Conversation not found
+                  Conversation Not Found
                 </h2>
 
                 <p className="mt-3 text-slate-500 text-sm">
-                  You don't have access to this conversation, or it may have been removed.
+                  This conversation does not exist or has not been started yet.
                 </p>
 
-                <div className="mt-6">
+                <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
                   <button
                     type="button"
                     onClick={() => navigate("/messages")}
@@ -52,6 +128,15 @@ const MessagesLayout = ({ conversationId }: MessagesLayoutProps) => {
                   >
                     <ArrowLeft size={18} />
                     Back to Messages
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate("/explore")}
+                    className="cursor-pointer inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    <Users size={18} />
+                    Explore Mentors
                   </button>
                 </div>
               </div>

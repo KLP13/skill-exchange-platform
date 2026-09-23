@@ -96,6 +96,17 @@ const SessionRoomLayout = ({ session }: SessionRoomLayoutProps) => {
     );
   }
 
+  const isStarted = session?.status === "in_progress" || !!session?.isStarted;
+
+  // Active Call: 100% Immersive Full-Screen Focus (No sidebar or topbar distractions)
+  if (isStarted) {
+    return (
+      <div className="fixed inset-0 z-50 flex flex-col h-screen w-screen bg-slate-950 overflow-y-auto">
+        <SessionRoomMain session={session} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-[#f8f7fc]">
       <Sidebar />

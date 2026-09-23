@@ -56,7 +56,7 @@ const SessionList = ({ activeFilter = "all" }: SessionListProps) => {
     // Active unexpired pending requests first
     displayedSessions = userSessions
       .filter((s) => s.status === "pending" && !isInitialRequestExpired(s))
-      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10));
+      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
   } else if (activeFilter === "completed") {
     // Completed History: newest completed first, SLICED TO LATEST 10
     displayedSessions = userSessions
@@ -86,7 +86,7 @@ const SessionList = ({ activeFilter = "all" }: SessionListProps) => {
 
     const pendingList = userSessions
       .filter((s) => s.status === "pending" && !isInitialRequestExpired(s))
-      .sort((a, b) => parseInt(b.id, 10) - parseInt(a.id, 10));
+      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
 
     const completedList = userSessions
       .filter((s) => s.status === "completed")

@@ -19,6 +19,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import type { Session } from "@/data/sessions";
 import { useSessions } from "@/hooks/useSessions";
+import UserAvatar from "@/components/ui/UserAvatar";
 import {
   isSessionBeforeStart,
   formatStartTimeOnly,
@@ -81,6 +82,7 @@ const MentorRequestCard = ({
     acceptRescheduleRequest,
     rejectRescheduleRequest,
     currentUser,
+    getUserById,
   } = useSessions();
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const pdfNote = getSessionPdfNote(session.id);
@@ -90,13 +92,8 @@ const MentorRequestCard = ({
   const isRescheduleRequester =
     pendingReschedule && currentUser.id === pendingReschedule.requestedById;
 
-  const learnerName = session.learnerName || "Student Learner";
-  const initials = learnerName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const learnerObj = getUserById(session.learnerId);
+  const learnerName = session.learnerName || learnerObj?.name || "Student Learner";
 
   const isInitialExpired = isInitialRequestExpired(session);
   const isUpcomingExpired = isSessionExpired(session);
@@ -115,9 +112,13 @@ const MentorRequestCard = ({
         {/* Learner & Session Info */}
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-base font-bold text-violet-700">
-              {initials}
-            </div>
+            <UserAvatar
+              avatar={learnerObj?.avatar}
+              name={learnerName}
+              sizeClassName="h-12 w-12"
+              textClassName="text-base font-bold"
+              className="rounded-2xl"
+            />
 
             <div>
               <div className="flex items-center gap-2.5">

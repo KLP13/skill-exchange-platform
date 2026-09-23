@@ -1,10 +1,11 @@
-import { createContext, useState } from "react";
+import { createContext, useState, useEffect, useCallback } from "react";
 import type { ReactNode } from "react";
 import { initialNotifications } from "@/data/notifications";
 import type {
   Notification,
   NotificationFilter,
 } from "@/data/notifications";
+import { notificationApi } from "@/services/notificationApi";
 
 export interface NotificationContextType {
   notifications: Notification[];
@@ -17,6 +18,8 @@ export interface NotificationContextType {
     filter: NotificationFilter
   ) => Notification[];
   markAsRead: (id: string, userId?: string) => void;
+  markNotificationsAsReadByRelatedId: (relatedId: string, userId?: string) => void;
+  markMessageNotificationsAsRead: (userId?: string) => void;
   markAllAsRead: (userId: string | undefined) => void;
   addNotification: (
     notification: Omit<Notification, "id" | "isRead"> & {
@@ -40,6 +43,66 @@ export const NotificationProvider = ({
     useState<Notification[]>(initialNotifications);
   const [activeFilter, setActiveFilter] =
     useState<NotificationFilter>("all");
+
+  // Periodic sync & online/focus recovery for notifications
+  const syncNotifications = useCallback(() => {
+    notificationApi
+      .getNotifications()
+      .then(({ notifications: liveNotifs }) => {
+        if (liveNotifs) {
+          setNotifications((prev) => {
+            const map = new Map<string, Notification>();
+            prev.forEach((n) => map.set(n.id, n));
+            liveNotifs.forEach((n) => {
+              const existing = map.get(n.id);
+              if (!existing) {
+                map.set(n.id, n);
+              } else {
+                map.set(n.id, {
+                  ...existing,
+                  ...n,
+                  isRead: existing.isRead || n.isRead,
+                });
+              }
+            });
+            return Array.from(map.values());
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn("Using local notifications fallback:", err);
+      });
+  }, []);
+
+  useEffect(() => {
+    syncNotifications();
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        syncNotifications();
+      }
+    }, 3500);
+
+    const handleOnline = () => {
+      syncNotifications();
+    };
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        syncNotifications();
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [syncNotifications]);
 
   const getUserNotifications = (userId: string | undefined): Notification[] => {
     if (!userId) return [];
@@ -78,6 +141,52 @@ export const NotificationProvider = ({
         return n;
       })
     );
+    notificationApi.markAsRead(id).catch((err) => {
+      console.warn("Backend notification markAsRead note:", err);
+    });
+  };
+
+  const markNotificationsAsReadByRelatedId = (
+    relatedId: string,
+    userId?: string
+  ) => {
+    if (!relatedId) return;
+    const targetIds: string[] = [];
+    setNotifications((prev) =>
+      prev.map((n) => {
+        const matchesUser = !userId || n.userId === String(userId);
+        const matchesRelated =
+          n.relatedId === relatedId ||
+          n.relatedRoute === `/messages/${relatedId}` ||
+          n.relatedRoute?.includes(relatedId);
+        if (matchesUser && matchesRelated && !n.isRead) {
+          targetIds.push(n.id);
+          return { ...n, isRead: true };
+        }
+        return n;
+      })
+    );
+    notificationApi.markAsReadByRelatedId(relatedId).catch(() => {});
+    targetIds.forEach((id) => {
+      notificationApi.markAsRead(id).catch(() => {});
+    });
+  };
+
+  const markMessageNotificationsAsRead = (userId?: string) => {
+    const targetIds: string[] = [];
+    setNotifications((prev) =>
+      prev.map((n) => {
+        const matchesUser = !userId || n.userId === String(userId);
+        if (matchesUser && n.type === "message" && !n.isRead) {
+          targetIds.push(n.id);
+          return { ...n, isRead: true };
+        }
+        return n;
+      })
+    );
+    targetIds.forEach((id) => {
+      notificationApi.markAsRead(id).catch(() => {});
+    });
   };
 
   const markAllAsRead = (userId: string | undefined) => {
@@ -85,6 +194,9 @@ export const NotificationProvider = ({
     setNotifications((prev) =>
       prev.map((n) => (n.userId === String(userId) ? { ...n, isRead: true } : n))
     );
+    notificationApi.markAllAsRead().catch((err) => {
+      console.warn("Backend notification markAllAsRead note:", err);
+    });
   };
 
   const addNotification = (
@@ -121,6 +233,8 @@ export const NotificationProvider = ({
         getUserUnreadCount,
         getFilteredUserNotifications,
         markAsRead,
+        markNotificationsAsReadByRelatedId,
+        markMessageNotificationsAsRead,
         markAllAsRead,
         addNotification,
       }}

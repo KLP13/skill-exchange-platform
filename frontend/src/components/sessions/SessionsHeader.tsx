@@ -1,11 +1,38 @@
 import {
   CalendarDays,
   Clock3,
- CheckCircle2,
+  CheckCircle2,
   Coins,
 } from "lucide-react";
+import { useSessions } from "@/hooks/useSessions";
+import { useWallet } from "@/hooks/useWallet";
+import { isSessionExpired, isInitialRequestExpired } from "@/utils/sessionTime";
 
 const SessionsHeader = () => {
+  const { sessions, currentUser, getPendingRescheduleForSession } = useSessions();
+  const { totalSpent } = useWallet();
+
+  // Sessions relevant to the active user
+  const userSessions = sessions.filter((s) => {
+    if (s.status === "pending") return s.learnerId === currentUser.id;
+    return s.learnerId === currentUser.id || s.mentorId === currentUser.id;
+  });
+
+  const upcomingCount = userSessions.filter(
+    (s) =>
+      (s.status === "upcoming" &&
+        (!isSessionExpired(s) || Boolean(getPendingRescheduleForSession(s.id)))) ||
+      s.isStarted
+  ).length;
+
+  const pendingCount = userSessions.filter(
+    (s) => s.status === "pending" && !isInitialRequestExpired(s)
+  ).length;
+
+  const completedCount = userSessions.filter(
+    (s) => s.status === "completed"
+  ).length;
+
   return (
     <section>
       {/* Page Heading */}
@@ -34,7 +61,7 @@ const SessionsHeader = () => {
               </p>
 
               <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                3
+                {upcomingCount}
               </h2>
             </div>
 
@@ -56,7 +83,7 @@ const SessionsHeader = () => {
               </p>
 
               <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                2
+                {pendingCount}
               </h2>
             </div>
 
@@ -78,7 +105,7 @@ const SessionsHeader = () => {
               </p>
 
               <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                18
+                {completedCount}
               </h2>
             </div>
 
@@ -100,7 +127,7 @@ const SessionsHeader = () => {
               </p>
 
               <h2 className="mt-2 text-3xl font-bold text-slate-900">
-                245
+                {totalSpent}
               </h2>
             </div>
 

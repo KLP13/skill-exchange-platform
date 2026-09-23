@@ -25,6 +25,7 @@ import {
   formatStartTimeOnly,
   isSessionExpired,
   isInitialRequestExpired,
+  formatSessionDuration,
 } from "@/utils/sessionTime";
 import CancelSessionModal from "./CancelSessionModal";
 import CancelRequestModal from "./CancelRequestModal";
@@ -69,7 +70,6 @@ const SessionCard = (session: SessionCardProps) => {
     topic,
     date,
     time,
-    duration,
     status,
     learnerId,
     isStarted,
@@ -90,6 +90,7 @@ const SessionCard = (session: SessionCardProps) => {
 
   const isLearner = currentUser.id === learnerId;
   const isMentor = currentUser.id === session.mentorId;
+  const liveIsStarted = Boolean(isStarted && status !== "completed" && status !== "cancelled" && status !== "rejected");
   const hasReview = reviews.some((r) => r.sessionId === id);
   const isBeforeStart = isSessionBeforeStart(date, time);
   const startTimeDisplay = formatStartTimeOnly(time);
@@ -116,7 +117,7 @@ const SessionCard = (session: SessionCardProps) => {
     } else {
       roleSubtitle = `You taught ${topic} to ${session.learnerName || "your student"}.`;
     }
-  } else if (isStarted) {
+  } else if (liveIsStarted) {
     roleSubtitle = isLearner
       ? `Live session in progress with ${mentor}.`
       : `Live session in progress with ${session.learnerName || "your student"}.`;
@@ -176,7 +177,7 @@ const SessionCard = (session: SessionCardProps) => {
         <div>
           {/* Status Badge */}
           <div className="flex flex-wrap items-center gap-3">
-            {isStarted ? (
+            {liveIsStarted ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3.5 py-1.5 text-xs font-bold text-emerald-800">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
                 In Progress
@@ -282,7 +283,7 @@ const SessionCard = (session: SessionCardProps) => {
           </p>
 
           <p className="mt-1 text-xl font-bold text-violet-700">
-            {duration}
+            {formatSessionDuration(session)}
           </p>
         </div>
       </div>
@@ -358,7 +359,7 @@ const SessionCard = (session: SessionCardProps) => {
       {/* Action Buttons */}
       <div className="mt-7 flex flex-wrap items-center gap-3">
         {/* IN PROGRESS */}
-        {isStarted && (
+        {liveIsStarted && (
           <button
             type="button"
             onClick={(event) => {
@@ -373,7 +374,7 @@ const SessionCard = (session: SessionCardProps) => {
         )}
 
         {/* UPCOMING (not started and not expired, or has pending reschedule) */}
-        {!isStarted && status === "upcoming" && (!isExpired || Boolean(pendingReschedule)) && (
+        {!liveIsStarted && status === "upcoming" && (!isExpired || Boolean(pendingReschedule)) && (
           <>
             {isMentor ? (
               isBeforeStart ? (

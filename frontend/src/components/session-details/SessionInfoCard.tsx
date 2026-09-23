@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import type { Session } from "@/data/sessions";
 import { useSessions } from "@/hooks/useSessions";
+import { formatSessionDuration } from "@/utils/sessionTime";
 
 type SessionInfoCardProps = {
   session: Session;
@@ -110,7 +111,7 @@ const SessionInfoCard = ({ session }: SessionInfoCardProps) => {
             </p>
 
             <p className="mt-1 text-sm font-semibold text-slate-800">
-              {session.duration}
+              {formatSessionDuration(session)}
             </p>
           </div>
         </div>

@@ -9,11 +9,17 @@ dotenv.config();
  * Migration runner: reads schema.sql and applies it against PostgreSQL
  */
 export async function runMigrations(): Promise<void> {
-  const schemaPath = path.join(__dirname, "schema.sql");
-  console.log(`\n📦  Loading base schema from: ${schemaPath}`);
+  const possiblePaths = [
+    path.join(__dirname, "schema.sql"),
+    path.join(__dirname, "..", "src", "db", "schema.sql"),
+    path.join(process.cwd(), "src", "db", "schema.sql"),
+    path.join(process.cwd(), "dist", "db", "schema.sql"),
+  ];
+  const schemaPath = possiblePaths.find((p) => fs.existsSync(p));
+  console.log(`\n📦  Loading base schema from: ${schemaPath || "Not found"}`);
 
-  if (!fs.existsSync(schemaPath)) {
-    throw new Error(`Schema file not found at ${schemaPath}`);
+  if (!schemaPath || !fs.existsSync(schemaPath)) {
+    throw new Error(`Schema file not found in paths: ${possiblePaths.join(", ")}`);
   }
 
   const baseSql = fs.readFileSync(schemaPath, "utf-8");
@@ -26,8 +32,13 @@ export async function runMigrations(): Promise<void> {
     await client.query(baseSql);
 
     // Apply any incremental migrations in migrations/ folder
-    const migrationsDir = path.join(__dirname, "migrations");
-    if (fs.existsSync(migrationsDir)) {
+    const possibleMigrationDirs = [
+      path.join(__dirname, "migrations"),
+      path.join(process.cwd(), "src", "db", "migrations"),
+      path.join(process.cwd(), "dist", "db", "migrations"),
+    ];
+    const migrationsDir = possibleMigrationDirs.find((d) => fs.existsSync(d));
+    if (migrationsDir) {
       const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith(".sql")).sort();
       for (const file of files) {
         console.log(`   Applying migration: ${file}`);

@@ -1,4 +1,5 @@
 import type { Conversation } from "@/data/messages";
+import UserAvatar from "@/components/ui/UserAvatar";
 
 type ConversationItemProps = {
   conversation: Conversation;
@@ -25,15 +26,12 @@ const ConversationItem = ({
     >
       {/* Avatar */}
       <div className="relative shrink-0">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-violet-600 text-sm font-bold text-white shadow-xs">
-          {conversation.participantAvatar ||
-            (conversation.participantName || "U")
-              .split(" ")
-              .map((n) => n[0])
-              .join("")
-              .toUpperCase()
-              .slice(0, 2)}
-        </div>
+        <UserAvatar
+          avatar={conversation.participantAvatar}
+          name={conversation.participantName}
+          sizeClassName="h-12 w-12"
+          textClassName="text-sm font-bold"
+        />
         {unreadCount > 0 && (
           <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-green-500" />
         )}

@@ -11,18 +11,27 @@ type ChatWindowProps = {
 };
 
 const ChatWindow = ({ conversation, onBack }: ChatWindowProps) => {
-  const { getMessagesByConversationId, sendMessage, markConversationAsRead } =
-    useChat();
+  const {
+    getMessagesByConversationId,
+    sendMessage,
+    markConversationAsRead,
+    setActiveConversationId,
+  } = useChat();
 
   const messages = getMessagesByConversationId(conversation.id);
-  const unreadCount = conversation.unreadCount || 0;
 
-  // Mark unread messages as read when opening conversation
+  // Keep ChatContext aware of the active conversation for real-time priority syncing
   useEffect(() => {
-    if (unreadCount > 0) {
-      markConversationAsRead(conversation.id);
-    }
-  }, [conversation.id, unreadCount, markConversationAsRead]);
+    setActiveConversationId(conversation.id);
+    return () => {
+      setActiveConversationId(null);
+    };
+  }, [conversation.id, setActiveConversationId]);
+
+  // Mark messages and notifications as read when opening or viewing conversation
+  useEffect(() => {
+    markConversationAsRead(conversation.id);
+  }, [conversation.id, messages.length, markConversationAsRead]);
 
   const handleSendMessage = (text: string) => {
     sendMessage(conversation.id, text);
@@ -31,7 +40,7 @@ const ChatWindow = ({ conversation, onBack }: ChatWindowProps) => {
   return (
     <div className="flex h-full flex-col bg-white">
       <ChatHeader conversation={conversation} onBack={onBack} />
-      <MessageList messages={messages} />
+      <MessageList messages={messages} conversationId={conversation.id} />
       <MessageInput onSendMessage={handleSendMessage} />
     </div>
   );

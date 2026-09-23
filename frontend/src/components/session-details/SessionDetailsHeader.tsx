@@ -109,7 +109,7 @@ const SessionDetailsHeader = ({ session }: SessionDetailsHeaderProps) => {
               {session.topic}
             </h1>
 
-            {session.isStarted ? (
+            {session.isStarted && session.status !== "completed" && session.status !== "cancelled" && session.status !== "rejected" ? (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3.5 py-1 text-xs font-bold text-emerald-800">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
                 In Progress
