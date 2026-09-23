@@ -15,8 +15,8 @@ pipeline {
                 echo "Stage 1: Checkout Source Code from GitHub"
                 echo "=========================================="
                 checkout scmGit(
-                    branches: [[name: '*/prasad']],
-                    userRemoteConfigs: [[url: 'https://github.com/ChidviReddy/campus-skill-exchange.git']]
+                    branches: [[name: '*/main'], [name: '*/prasad']],
+                    userRemoteConfigs: [[url: 'https://github.com/KLP13/skill-exchange-platform.git']]
                 )
             }
         }
