@@ -94,3 +94,17 @@ A peer-to-peer campus skill-sharing and mentorship web application designed for 
    ```
 7. **Access Remotely**:
    Open `http://<EC2-PUBLIC-IP>` in any browser.
+
+---
+
+## ?? Sprint 08: Continuous Integration with Jenkins
+
+This project is integrated with an automated Continuous Integration (CI) pipeline powered by **Jenkins LTS** and **Docker**:
+
+- **Automated Source Retrieval**: Clones and verifies commits from GitHub (https://github.com/KLP13/skill-exchange-platform.git).
+- **Automated Build & Transpilation**: Installs npm dependencies and compiles TypeScript (
+pm run build).
+- **Static Code Analysis & Quality Gate**: Enforces type-safety and static lint checks (
+pm run typecheck).
+- **Container Artifact Packaging**: Builds versioned Docker container images (skillswap-backend:build- and skillswap-frontend:build-).
+- **Agile CI Feedback Loop**: Provides immediate build status reporting (SUCCESS / FAILURE) to developers.
