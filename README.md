@@ -108,3 +108,7 @@ pm run build).
 pm run typecheck).
 - **Container Artifact Packaging**: Builds versioned Docker container images (skillswap-backend:build- and skillswap-frontend:build-).
 - **Agile CI Feedback Loop**: Provides immediate build status reporting (SUCCESS / FAILURE) to developers.
+
+## Deployment
+This project is deployed automatically through a Jenkins CI/CD pipeline (Sprint 9).
+
