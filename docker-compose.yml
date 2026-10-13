@@ -26,10 +26,7 @@ services:
   # Backend API Service: Node.js Express
   # ==========================================
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    image: klprasad/skillswap-backend:v1.0
+    image: klprasad/skillswap-backend:${IMAGE_TAG:-v1.0}
     container_name: skillswap-backend
     restart: always
     environment:
@@ -44,8 +41,8 @@ services:
       CLIENT_URL: ${CLIENT_URL:-http://localhost:5173}
       SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER}
-      SMTP_PASS: ${SMTP_PASS}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
     ports:
       - "5000:5000"
     depends_on:
@@ -58,10 +55,7 @@ services:
   # Frontend Web Service: React (Vite + Nginx)
   # ==========================================
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    image: klprasad/skillswap-frontend:v1.0
+    image: klprasad/skillswap-frontend:${IMAGE_TAG:-v1.0}
     container_name: skillswap-frontend
     restart: always
     ports:
